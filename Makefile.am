@@ -8,21 +8,21 @@ LIBICONV = @LIBICONV@
 AM_CPPFLAGS = -DFUSE_USE_VERSION=26
 AM_LDFLAGS = $(LIBICONV)
 
-bin_PROGRAMS = curlftpfs
+bin_PROGRAMS = viaphpfs
 
-curlftpfs_SOURCES = ftpfs.c
+viaphpfs_SOURCES = viapfs.c
 if FUSE_OPT_COMPAT
-curlftpfs_LDADD = libcurlftpfs.a compat/libcompat.la
+viaphpfs_LDADD = libviaphpfs.a compat/libcompat.la
 else
-curlftpfs_LDADD = libcurlftpfs.a
+viaphpfs_LDADD = libviaphpfs.a
 endif
 
-noinst_LIBRARIES = libcurlftpfs.a
+noinst_LIBRARIES = libviaphpfs.a
 
-libcurlftpfs_a_SOURCES = cache.c cache.h \
-			 ftpfs-ls.c ftpfs-ls.h \
+libviaphpfs_a_SOURCES = cache.c cache.h \
+			 viapfs-ls.c viapfs-ls.h \
 			 charset_utils.c charset_utils.h \
-			 path_utils.c path_utils.h ftpfs.h
+			 path_utils.c path_utils.h viapfs.h
 
 check: test
 

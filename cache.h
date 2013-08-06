@@ -1,5 +1,5 @@
-#ifndef __CURLFTPFS_CACHE_H__
-#define __CURLFTPFS_CACHE_H__
+#ifndef __VIAPHPFS_CACHE_H__
+#define __VIAPHPFS_CACHE_H__
 
 /*
     Caching file system proxy
@@ -36,4 +36,4 @@ void cache_add_attr(const char *path, const struct stat *stbuf);
 void cache_add_dir(const char *path, char **dir);
 void cache_add_link(const char *path, const char *link, size_t size);
 
-#endif   /* __CURLFTPFS_CACHE_H__ */
+#endif   /* __VIAPHPFS_CACHE_H__ */

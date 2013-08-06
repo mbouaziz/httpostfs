@@ -1,9 +1,9 @@
-#ifndef __CURLFTPFS_FTPFS_H__
-#define __CURLFTPFS_FTPFS_H__
+#ifndef __VIAPHPFS_VIAPFS_H__
+#define __VIAPHPFS_VIAPFS_H__
 
 /*
-    FTP file system
     Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
+    2013 Mehdi Bouaziz <mehdi@bouaziz.me>
 
     This program can be distributed under the terms of the GNU GPL.
     See the file COPYING.
@@ -14,24 +14,24 @@
 #include <pthread.h>
 #include <pthread.h>
 
-struct ftpfs {
+struct viapfs {
   char* host;
   char* mountpoint;
   pthread_mutex_t lock;
   CURL* connection;
   CURLM* multi;
   int attached_to_multi;
-  struct ftpfs_file* current_fh;
+  struct viapfs_file* current_fh;
   unsigned blksize;
   int verbose;
   int debug;
   int transform_symlinks;
   int disable_epsv;
   int skip_pasv_ip;
-  char* ftp_method;
+  char* http_method;
   char* custom_list;
   int tcp_nodelay;
-  char* ftp_port;
+  char* http_port;
   int disable_eprt;
   int connect_timeout;
   int use_ssl;
@@ -69,10 +69,10 @@ struct ftpfs {
   int multiconn;
 };
 
-extern struct ftpfs ftpfs;
+extern struct viapfs viapfs;
 
 #define DEBUG(level, args...) \
-        do { if (level <= ftpfs.debug) {\
+        do { if (level <= viapfs.debug) {\
                int i = 0; \
                while (++i < level) fprintf(stderr, " "); \
                fprintf(stderr, "%ld ", time(NULL));\
@@ -81,4 +81,4 @@ extern struct ftpfs ftpfs;
              }\
            } while(0)
 
-#endif   /* __CURLFTPFS_FTPFS_H__ */
+#endif   /* __VIAPHPFS_VIAPFS_H__ */

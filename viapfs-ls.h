@@ -1,9 +1,9 @@
-#ifndef __CURLFTPFS_FTPFS_LS_H__
-#define __CURLFTPFS_FTPFS_LS_H__
+#ifndef __VIAPHPFS_VIAPFS_LS_H__
+#define __VIAPHPFS_VIAPFS_LS_H__
 
 /*
-    FTP file system
     Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
+    2013 Mehdi Bouaziz <mehdi@bouaziz.me>
 
     This program can be distributed under the terms of the GNU GPL.
     See the file COPYING.
@@ -16,4 +16,4 @@ int parse_dir(const char* list, const char* dir,
               char* linkbuf, int linklen,
               fuse_cache_dirh_t h, fuse_cache_dirfil_t filler);
 
-#endif  /* __CURLFTPFS_FTPFS_LS_H__ */
+#endif  /* __VIAPHPFS_VIAPFS_LS_H__ */

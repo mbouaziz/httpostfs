@@ -1,4 +1,4 @@
-AC_INIT(curlftpfs, 0.9.2)
+AC_INIT(viaphpfs, 0.0.1)
 AM_INIT_AUTOMAKE
 AM_CONFIG_HEADER(config.h)
 
@@ -14,8 +14,8 @@ PKG_CHECK_MODULES(GLIB, [glib-2.0])
 PKG_CHECK_MODULES(FUSE, [fuse >= 2.2])
 
 LIBCURL_CHECK_CONFIG([yes], [7.17.0], [], [AC_MSG_ERROR(["libcurl not found"])])
-if test "$libcurl_protocol_FTP" != yes; then
-	AC_MSG_ERROR(["We need libcurl with support for FTP protocol."])
+if test "$libcurl_protocol_HTTP" != yes; then
+	AC_MSG_ERROR(["We need libcurl with support for HTTP protocol."])
 fi
 
 CFLAGS="$CFLAGS -Wall -W -Wno-sign-compare -D_REENTRANT $GLIB_CFLAGS $FUSE_CFLAGS $LIBCURL_CPPFLAGS"

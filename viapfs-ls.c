@@ -1,6 +1,6 @@
 /*
-    FTP file system
     Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
+    2013 Mehdi Bouaziz <mehdi@bouaziz.me>
 
     This program can be distributed under the terms of the GNU GPL.
     See the file COPYING.
@@ -21,9 +21,9 @@
 #include <stdlib.h>
 #include <glib.h>
 
-#include "ftpfs.h"
+#include "viapfs.h"
 #include "charset_utils.h"
-#include "ftpfs-ls.h"
+#include "viapfs-ls.h"
 
 static int parse_dir_unix(const char *line,
                           struct stat *sbuf,
@@ -98,10 +98,10 @@ static int parse_dir_unix(const char *line,
   sbuf->st_nlink = nlink;
 
   sbuf->st_size = size;
-  if (ftpfs.blksize) {
-    sbuf->st_blksize = ftpfs.blksize;
+  if (viapfs.blksize) {
+    sbuf->st_blksize = viapfs.blksize;
     sbuf->st_blocks =
-      ((size + ftpfs.blksize - 1) & ~((unsigned long long) ftpfs.blksize - 1)) >> 9;
+      ((size + viapfs.blksize - 1) & ~((unsigned long long) viapfs.blksize - 1)) >> 9;
   }
 
   sprintf(date,"%s,%s,%s", year, month, day);
@@ -165,10 +165,10 @@ static int parse_dir_win(const char *line,
     unsigned long long nsize = strtoull(size, NULL, 0);
     sbuf->st_mode |= S_IFREG;
     sbuf->st_size = nsize;
-    if (ftpfs.blksize) {
-      sbuf->st_blksize = ftpfs.blksize;
+    if (viapfs.blksize) {
+      sbuf->st_blksize = viapfs.blksize;
       sbuf->st_blocks =
-        ((nsize + ftpfs.blksize - 1) & ~((unsigned long long) ftpfs.blksize - 1)) >> 9;
+        ((nsize + viapfs.blksize - 1) & ~((unsigned long long) viapfs.blksize - 1)) >> 9;
     }
   }
 
@@ -223,8 +223,8 @@ int parse_dir(const char* list, const char* dir,
     line[end - start] = '\0';
     start = *end == '\r' ? end + 2 : end + 1;
 
-    if (ftpfs.codepage) {
-      convert_charsets(ftpfs.codepage, ftpfs.iocharset, &line);
+    if (viapfs.codepage) {
+      convert_charsets(viapfs.codepage, viapfs.iocharset, &line);
     }
 
     file[0] = link[0] = '\0';
@@ -237,8 +237,8 @@ int parse_dir(const char* list, const char* dir,
 
       if (link[0]) {
         char *reallink;
-        if (link[0] == '/' && ftpfs.symlink_prefix_len) {
-          reallink = g_strdup_printf("%s%s", ftpfs.symlink_prefix, link);
+        if (link[0] == '/' && viapfs.symlink_prefix_len) {
+          reallink = g_strdup_printf("%s%s", viapfs.symlink_prefix, link);
         } else {
           reallink = g_strdup(link);
         }

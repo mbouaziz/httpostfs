@@ -1,6 +1,6 @@
 /*
-    FTP file system
     Copyright (C) 2007 Robson Braga Araujo <robsonbraga@gmail.com>
+    2013 Mehdi Bouaziz <mehdi@bouaziz.me>
 
     This program can be distributed under the terms of the GNU GPL.
     See the file COPYING.
@@ -8,7 +8,7 @@
 
 #include "path_utils.h"
 #include "charset_utils.h"
-#include "ftpfs.h"
+#include "viapfs.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -20,8 +20,8 @@ char* get_file_name(const char* path) {
   else ++filename;
 
   char* ret = strdup(filename);
-  if (ftpfs.codepage) {
-    convert_charsets(ftpfs.iocharset, ftpfs.codepage, &ret);
+  if (viapfs.codepage) {
+    convert_charsets(viapfs.iocharset, viapfs.codepage, &ret);
   }
   
   return ret;
@@ -33,13 +33,13 @@ char* get_full_path(const char* path) {
   
   ++path;
 
-  if (ftpfs.codepage && strlen(path)) {
+  if (viafs.codepage && strlen(path)) {
     converted_path = strdup(path);
-    convert_charsets(ftpfs.iocharset, ftpfs.codepage, &converted_path);
+    convert_charsets(viapfs.iocharset, viapfs.codepage, &converted_path);
     path = converted_path;
   }
 
-  ret = g_strdup_printf("%s%s", ftpfs.host, path);
+  ret = g_strdup_printf("%s%s", viapfs.host, path);
 
   free(converted_path);
 
@@ -52,13 +52,13 @@ char* get_fulldir_path(const char* path) {
 
   ++path;
 
-  if (ftpfs.codepage && strlen(path)) {
+  if (viapfs.codepage && strlen(path)) {
     converted_path = strdup(path);
-    convert_charsets(ftpfs.iocharset, ftpfs.codepage, &converted_path);
+    convert_charsets(viapfs.iocharset, viapfs.codepage, &converted_path);
     path = converted_path;
   }
 
-  ret = g_strdup_printf("%s%s%s", ftpfs.host, path, strlen(path) ? "/" : "");
+  ret = g_strdup_printf("%s%s%s", viapfs.host, path, strlen(path) ? "/" : "");
 
   free(converted_path);
 
@@ -75,15 +75,15 @@ char* get_dir_path(const char* path) {
   lastdir = strrchr(path, '/');
   if (lastdir == NULL) lastdir = path;
 
-  if (ftpfs.codepage && (lastdir - path > 0)) {
+  if (viapfs.codepage && (lastdir - path > 0)) {
     converted_path = g_strndup(path, lastdir - path);
-    convert_charsets(ftpfs.iocharset, ftpfs.codepage, &converted_path);
+    convert_charsets(viapfs.iocharset, viapfs.codepage, &converted_path);
     path = converted_path;
     lastdir = path + strlen(path);
   }
 
   ret = g_strdup_printf("%s%.*s%s",
-                        ftpfs.host,
+                        viapfs.host,
                         lastdir - path,
                         path,
                         lastdir - path ? "/" : "");
