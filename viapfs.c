@@ -31,7 +31,6 @@
 #include "viapfs.h"
 
 #define VIAPHPFS_BAD_NOBODY 0x070f02
-#define VIAPHPFS_BAD_SSL 0x070f03
 
 #define VIAPHPFS_BAD_READ ((size_t)-1)
 
@@ -131,29 +130,9 @@ enum {
 static struct fuse_opt viapfs_opts[] = {
   VIAPFS_OPT("viapfs_debug=%u",     debug, 0),
   VIAPFS_OPT("transform_symlinks", transform_symlinks, 1),
-  VIAPFS_OPT("disable_epsv",       disable_epsv, 1),
-  VIAPFS_OPT("enable_epsv",        disable_epsv, 0),
-  VIAPFS_OPT("skip_pasv_ip",       skip_pasv_ip, 1),
-  VIAPFS_OPT("http_port=%s",       http_port, 0),
-  VIAPFS_OPT("disable_eprt",       disable_eprt, 1),
-  VIAPFS_OPT("http_method=%s",     http_method, 0),
   VIAPFS_OPT("custom_list=%s",     custom_list, 0),
   VIAPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
   VIAPFS_OPT("connect_timeout=%u", connect_timeout, 0),
-  VIAPFS_OPT("ssl",                use_ssl, CURLHTTPSSL_ALL),
-  VIAPFS_OPT("ssl_control",        use_ssl, CURLHTTPSSL_CONTROL),
-  VIAPFS_OPT("ssl_try",            use_ssl, CURLHTTPSSL_TRY),
-  VIAPFS_OPT("no_verify_hostname", no_verify_hostname, 1),
-  VIAPFS_OPT("no_verify_peer",     no_verify_peer, 1),
-  VIAPFS_OPT("cert=%s",            cert, 0),
-  VIAPFS_OPT("cert_type=%s",       cert_type, 0),
-  VIAPFS_OPT("key=%s",             key, 0),
-  VIAPFS_OPT("key_type=%s",        key_type, 0),
-  VIAPFS_OPT("pass=%s",            key_password, 0),
-  VIAPFS_OPT("engine=%s",          engine, 0),
-  VIAPFS_OPT("cacert=%s",          cacert, 0),
-  VIAPFS_OPT("capath=%s",          capath, 0),
-  VIAPFS_OPT("ciphers=%s",         ciphers, 0),
   VIAPFS_OPT("interface=%s",       interface, 0),
   VIAPFS_OPT("krb4=%s",            krb4, 0),
   VIAPFS_OPT("proxy=%s",           proxy, 0),
@@ -167,11 +146,8 @@ static struct fuse_opt viapfs_opts[] = {
   VIAPFS_OPT("socks5",             proxytype, CURLPROXY_SOCKS5),
   VIAPFS_OPT("user=%s",            user, 0),
   VIAPFS_OPT("proxy_user=%s",      proxy_user, 0),
-  VIAPFS_OPT("tlsv1",              ssl_version, CURL_SSLVERSION_TLSv1),
-  VIAPFS_OPT("sslv3",              ssl_version, CURL_SSLVERSION_SSLv3),
   VIAPFS_OPT("ipv4",               ip_version, CURL_IPRESOLVE_V4),
   VIAPFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
-  VIAPFS_OPT("utf8",               tryutf8, 1),
   VIAPFS_OPT("codepage=%s",        codepage, 0),
   VIAPFS_OPT("iocharset=%s",       iocharset, 0),
   VIAPFS_OPT("nomulticonn",        multiconn, 0),
@@ -1410,11 +1386,10 @@ static int viapfs_opt_proc(void* data, const char* arg, int key,
     case FUSE_OPT_KEY_NONOPT:
       if (!viapfs.host) {
         const char* prefix = "";
-        if (strncmp(arg, "http://", 6) && strncmp(arg, "https://", 7)) {
-          prefix = "http://";
-        }
-        viapfs.host = g_strdup_printf("%s%s%s", prefix, arg, 
-			arg[strlen(arg)-1] == '/' ? "" : "/");
+        if (strncmp(arg, "http://", 6) && strncmp(arg, "https://", 7))
+          viapfs.host = g_strdup_printf("http://%s", arg);
+        else
+          viapfs.host = strdup(arg);
         return 0;
       } else if (!viapfs.mountpoint)
         viapfs.mountpoint = strdup(arg);
@@ -1452,29 +1427,9 @@ static void usage(const char* progname) {
 "HTTP options:\n"
 "    viapfs_debug         print some debugging information\n"
 "    transform_symlinks  prepend mountpoint to absolute symlink targets\n"
-"    disable_epsv        use PASV, without trying EPSV first (default)\n"
-"    enable_epsv         try EPSV before reverting to PASV\n"
-"    skip_pasv_ip        skip the IP address for PASV\n"
-"    http_port=STR       use PORT with address instead of PASV\n"
-"    disable_eprt        use PORT, without trying EPRT first\n"
-"    http_method         [multicwd/singlecwd] Control CWD usage\n"
 "    custom_list=STR     Command used to list files. Defaults to \"LIST -a\"\n"
 "    tcp_nodelay         use the TCP_NODELAY option\n"
 "    connect_timeout=N   maximum time allowed for connection in seconds\n"
-"    ssl                 enable SSL/TLS for both control and data connections\n"
-"    ssl_control         enable SSL/TLS only for control connection\n"
-"    ssl_try             try SSL/TLS first but connect anyway\n"
-"    no_verify_hostname  does not verify the hostname (SSL)\n"
-"    no_verify_peer      does not verify the peer (SSL)\n"
-"    cert=STR            client certificate file (SSL)\n"
-"    cert_type=STR       certificate file type (DER/PEM/ENG) (SSL)\n"
-"    key=STR             private key file name (SSL)\n"
-"    key_type=STR        private key file type (DER/PEM/ENG) (SSL)\n"
-"    pass=STR            pass phrase for the private key (SSL)\n"
-"    engine=STR          crypto engine to use (SSL)\n"
-"    cacert=STR          file with CA certificates to verify the peer (SSL)\n"
-"    capath=STR          CA directory to verify peer against (SSL)\n"
-"    ciphers=STR         SSL ciphers to use (SSL)\n"
 "    interface=STR       specify network interface/address to use\n"
 "    krb4=STR            enable krb4 with specified security level\n"
 "    proxy=STR           use host:port HTTP proxy\n"
@@ -1488,11 +1443,8 @@ static void usage(const char* progname) {
 "    socks5              use a SOCKS5 proxy\n"
 "    user=STR            set server user and password\n"
 "    proxy_user=STR      set proxy user and password\n"
-"    tlsv1               use TLSv1 (SSL)\n"
-"    sslv3               use SSLv3 (SSL)\n"
 "    ipv4                resolve name to IPv4 address\n"
 "    ipv6                resolve name to IPv6 address\n"
-"    utf8                try to transfer file list with utf-8 encoding\n"
 "    codepage=STR        set the codepage the server uses\n"
 "    iocharset=STR       set the charset used by the client\n"
 "\n"
@@ -1506,16 +1458,6 @@ static void usage(const char* progname) {
 "\n", progname, DEFAULT_CACHE_TIMEOUT);
 }
 
-static int httpfilemethod(const char *str)
-{
-  if(!strcmp("singlecwd", str))
-    return CURLHTTPMETHOD_SINGLECWD;
-  if(!strcmp("multicwd", str))
-    return CURLHTTPMETHOD_MULTICWD;
-  DEBUG(1, "unrecognized http file method '%s', using default\n", str);
-  return CURLHTTPMETHOD_MULTICWD;
-}
-
 static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_WRITEFUNCTION, read_data);
   curl_easy_setopt_or_die(easy, CURLOPT_READFUNCTION, write_data);
@@ -1523,48 +1465,13 @@ static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_URL, viapfs.host);
   curl_easy_setopt_or_die(easy, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
   curl_easy_setopt_or_die(easy, CURLOPT_NOSIGNAL, 1);
-  curl_easy_setopt_or_die(easy, CURLOPT_CUSTOMREQUEST, "LIST -a");
 
   if (viapfs.custom_list) {
     curl_easy_setopt_or_die(easy, CURLOPT_CUSTOMREQUEST, viapfs.custom_list);
   }
 
-  if (viapfs.tryutf8) {
-    // We'll let the slist leak, as it will still be accessible within
-    // libcurl. If we ever want to add more commands to CURLOPT_QUOTE, we'll
-    // have to think of a better strategy.
-    struct curl_slist *slist = NULL;
-
-    // Adding the QUOTE here will make this command be sent with every request.
-    // This is necessary to ensure that the server is still in UTF8 mode after
-    // we get disconnected and automatically reconnect.
-    slist = curl_slist_append(slist, "OPTS UTF8 ON");
-    curl_easy_setopt_or_die(easy, CURLOPT_QUOTE, slist);
-  }
-
   if (viapfs.verbose) {
     curl_easy_setopt_or_die(easy, CURLOPT_VERBOSE, TRUE);
-  }
-
-  if (viapfs.disable_epsv) {
-    curl_easy_setopt_or_die(easy, CURLOPT_HTTP_USE_EPSV, FALSE);
-  }
-
-  if (viapfs.skip_pasv_ip) {
-    curl_easy_setopt_or_die(easy, CURLOPT_HTTP_SKIP_PASV_IP, TRUE);
-  }
-
-  if (viapfs.http_port) {
-    curl_easy_setopt_or_die(easy, CURLOPT_HTTPPORT, viapfs.http_port);
-  }
-
-  if (viapfs.disable_eprt) {
-    curl_easy_setopt_or_die(easy, CURLOPT_HTTP_USE_EPRT, FALSE);
-  }
-
-  if (viapfs.http_method) {
-    curl_easy_setopt_or_die(easy, CURLOPT_HTTP_FILEMETHOD,
-                            httpfilemethod(viapfs.http_method));
   }
 
   if (viapfs.tcp_nodelay) {
@@ -1573,63 +1480,6 @@ static void set_common_curl_stuff(CURL* easy) {
   }
 
   curl_easy_setopt_or_die(easy, CURLOPT_CONNECTTIMEOUT, viapfs.connect_timeout);
-
-  /* CURLHTTPSSL_CONTROL and CURLHTTPSSL_ALL should make the connection fail if
-   * the server doesn't support SSL but libcurl only honors this beginning
-   * with version 7.15.4 */
-  if (viapfs.use_ssl > CURLHTTPSSL_TRY &&
-      viapfs.curl_version->version_num <= VIAPHPFS_BAD_SSL) {
-    fprintf(stderr,
-"WARNING: you are using libcurl %s.\n"
-"This version of libcurl does not respect the mandatory SSL flag.\n" 
-"It will try to send the user and password even if the server doesn't support\n"
-"SSL. Please upgrade to libcurl version 7.15.4 or higher.\n"
-"You can abort the connection now by pressing ctrl+c.\n",
-            viapfs.curl_version->version);
-    int i;
-    const int time_to_wait = 10;
-    for (i = 0; i < time_to_wait; i++) {
-      fprintf(stderr, "%d.. ", time_to_wait - i);
-      sleep(1);
-    }
-    fprintf(stderr, "\n");
-  }
-  curl_easy_setopt_or_die(easy, CURLOPT_HTTP_SSL, viapfs.use_ssl);
-
-  curl_easy_setopt_or_die(easy, CURLOPT_SSLCERT, viapfs.cert);
-  curl_easy_setopt_or_die(easy, CURLOPT_SSLCERTTYPE, viapfs.cert_type);
-  curl_easy_setopt_or_die(easy, CURLOPT_SSLKEY, viapfs.key);
-  curl_easy_setopt_or_die(easy, CURLOPT_SSLKEYTYPE, viapfs.key_type);
-  curl_easy_setopt_or_die(easy, CURLOPT_SSLKEYPASSWD, viapfs.key_password);
-
-  if (viapfs.engine) {
-    curl_easy_setopt_or_die(easy, CURLOPT_SSLENGINE, viapfs.engine);
-    curl_easy_setopt_or_die(easy, CURLOPT_SSLENGINE_DEFAULT, 1);
-  }
-
-  curl_easy_setopt_or_die(easy, CURLOPT_SSL_VERIFYPEER, TRUE);
-  if (viapfs.no_verify_peer) {
-    curl_easy_setopt_or_die(easy, CURLOPT_SSL_VERIFYPEER, FALSE);
-  }
-
-  if (viapfs.cacert || viapfs.capath) {
-    if (viapfs.cacert) {
-      curl_easy_setopt_or_die(easy, CURLOPT_CAINFO, viapfs.cacert);
-    }
-    if (viapfs.capath) {
-      curl_easy_setopt_or_die(easy, CURLOPT_CAPATH, viapfs.capath);
-    }
-  }
-
-  if (viapfs.ciphers) {
-    curl_easy_setopt_or_die(easy, CURLOPT_SSL_CIPHER_LIST, viapfs.ciphers);
-  }
-
-  if (viapfs.no_verify_hostname) {
-    /* The default is 2 which verifies even the host string. This sets to 1
-     * which means verify the host but not the string. */
-    curl_easy_setopt_or_die(easy, CURLOPT_SSL_VERIFYHOST, 1);
-  }
 
   curl_easy_setopt_or_die(easy, CURLOPT_INTERFACE, viapfs.interface);
   curl_easy_setopt_or_die(easy, CURLOPT_KRB4LEVEL, viapfs.krb4);
@@ -1659,9 +1509,9 @@ static void set_common_curl_stuff(CURL* easy) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXYAUTH, CURLAUTH_BASIC);
   }
 
+  // MB: maybe use CURLOPT_HTTPAUTH
   curl_easy_setopt_or_die(easy, CURLOPT_USERPWD, viapfs.user);
   curl_easy_setopt_or_die(easy, CURLOPT_PROXYUSERPWD, viapfs.proxy_user);
-  curl_easy_setopt_or_die(easy, CURLOPT_SSLVERSION, viapfs.ssl_version);
   curl_easy_setopt_or_die(easy, CURLOPT_IPRESOLVE, viapfs.ip_version);
 }
 
@@ -1738,7 +1588,6 @@ int main(int argc, char** argv) {
   viapfs.curl_version = curl_version_info(CURLVERSION_NOW);
   viapfs.safe_nobody = viapfs.curl_version->version_num > VIAPHPFS_BAD_NOBODY;
   viapfs.blksize = 4096;
-  viapfs.disable_epsv = 1;
   viapfs.multiconn = 1;
   viapfs.attached_to_multi = 0;
   

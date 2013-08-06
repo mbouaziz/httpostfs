@@ -33,42 +33,6 @@ Options are specified with a
 flag followed by a comma separated string of options. 
 .RS
 .TP
-.B cacert=<file>
-(SSL) Pass a string naming a file holding
-one or more certificates to verify the peer with.
-
-Note  that  option  is  by  default set to the system path where
-libcurl's cacert bundle is assumed to be stored, as  established
-at build time.
-.TP
-.B capath=<directory>
-(SSL) Tells viaphpfs to use the specified certificate directory to verify the
-peer. The certificates must be in PEM format, and the directory must have been
-processed using  the  c_rehash  utility supplied  with  openssl.  Using
-\fBcapath\fP can allow viaphpfs to make connections much more
-efficiently than using  \fBcacert\fP  if the \fBcacert\fP file contains many CA
-certificates.
-.TP
-.B cert=<certificate>
-(SSL) Tells viaphpfs to use the specified certificate file. The default format
-is "PEM" and can be changed with \fBcert_type\fP.
-.TP
-.B cert_type=<type>
-(SSL) Tells viaphpfs what certificate type the provided certificate is in.
-PEM, DER and ENG are recognized types.
-.TP
-.B ciphers=<list of ciphers>
-(SSL) Specifies which ciphers to use in the connection. The list must be
-syntactically correct, it consists of one or more cipher strings separated  by
-colons. Commas or spaces
-are also acceptable separators but colons are normally used, , - and + can
-be  used  as operators.  Valid  examples  of  cipher lists include 'RC4-SHA',
-\'SHA1+DES', 'TLSv1' and 'DEFAULT'. The default list is  normally
-set when you compile OpenSSL.
-
-Read up on SSL cipher list details
-on this URL: \fIhttp://www.openssl.org/docs/apps/ciphers.html\fP
-.TP
 .B codepage=<name>
 Sets the encoding the http server uses to encode file names.
 .TP
@@ -81,72 +45,11 @@ is of no more use.
 Command used by viaphpfs to list files. The default is "LIST -a" but some
 servers might require extra options, e.g. "LIST -la".
 .TP
-.B disable_eprt
-Tell viaphpfs to disable the use of the EPRT and LPRT commands when doing
-active HTTP transfers. Viaphpfs will normally always first attempt to use EPRT,
-then LPRT before using PORT, but with this option, it will use PORT right
-away. EPRT and LPRT are extensions to the original HTTP protocol, may not work
-on all servers but enable more functionality in a better way than the
-traditional PORT command.
-.TP
-.B disable_epsv
-Tell viaphpfs to disable the use of the EPSV command when doing passive HTTP
-transfers. This is the default.
-.TP
-.B enable_epsv
-Tell viaphpfs to enable the use of the EPSV command when doing passive HTTP
-transfers. Viaphpfs will first attempt to use EPSV before PASV.
-.TP
-.B engine=<name>
-Select  the  OpenSSL crypto engine to use for cipher operations.  Use: 
-.br
-.B "curl \-\-engine list"
-.br
-to  print  a  list  of  build-time  supported engines.  Note  that  not
-all  (or  none) of the engines may be available at run-time.
-.TP
 .B viapfs_debug
 Make viaphpfs print lots of debug information. Useful only in conjunction with
 the
 .B \-d
 option.
-.TP
-.B http_method=<method>
-Control what method viaphpfs should use to reach a file on the
-server. The method argument should be one of the following alternatives:
-.RS
-.IP multicwd
-viaphpfs does a single CWD operation for each path part in the given URL. For
-deep hierarchies this means very many commands. This is how RFC1738 says it
-should be done. This is the default but the slowest behavior.
-.IP singlecwd
-viaphpfs does one CWD with the full target directory and then operates on the
-file \&"normally" (like in the multicwd case). 
-.RE
-.TP
-.B http_port=<address>
-Reverses the initiator/listener roles when connecting with http. This
-switch makes viaphpfs use the PORT command instead of PASV. In practice, PORT
-tells the server to connect to the client's specified address and port, while
-PASV asks the server for an ip address and port to connect to. <address>
-should be one of:
-.RS
-.IP interface
-i.e "eth0" to specify which interface's IP address you want to use
-.IP "IP address"
-i.e "192.168.10.1" to specify exact IP number
-.IP "host name"
-i.e "my.host.domain" to specify machine
-.IP "-"
-make viaphpfs pick the same IP address that is already used for the control
-connection
-.RE
-.RS
-
-Disable the
-attempt to use the EPRT command instead of PORT by using \fIdisable_eprt\fP.
-EPRT is really PORT++.
-.RE
 .TP
 .B httpproxy
 Set the proxy type to HTTP. This is the default type.
@@ -170,21 +73,6 @@ If  libcurl  is  capable  of resolving an address to multiple IP versions
 (which it is if it is ipv6-capable), this option  tells libcurl  to  resolve
 names  to  IPv6  addresses only.
 .TP
-.B key=<key>
-(SSL) Private key file name. Allows you to provide your private key in this
-separate file. The  default format is "PEM" and can be changed with
-\fBkey_type\fP.
-.TP
-.B key_type=<type>
-(SSL) Pass a string in
-the format of your private key. Supported  formats are "PEM", "DER" and
-"ENG".
-
-The  format  "ENG"  enables  you  to load the private key from a crypto engine.
-In this case \fBkey\fP is used as an identifier  passed to  the  engine.
-You have to set the crypto engine with \fBengine\fP option.  "DER" format key
-file  currently  does not work because of a bug in OpenSSL.
-.TP
 .B krb4=<level>
 Enable kerberos4 authentication and use. The level must be entered and should
 be one of 'clear', 'safe', 'confidential'  or 'private'.  Should  you  use  a
@@ -192,17 +80,6 @@ level that is not one of these, 'private' will instead be used.
 
 This option requires that the libcurl library was built  with  kerberos4
 support.  This is  not  very common.
-.TP
-.B no_verify_hostname
-(SSL) Viaphpfs will not verify the hostname when connecting to a SSL enabled
-server.
-.TP
-.B no_verify_peer
-(SSL) Viaphpfs will not verify the certificate when connecting to a SSL
-enabled server.
-.TP
-.B pass=<password>
-(SSL) Pass phrase for the private key.
 .TP
 .B proxy=<host[:port]>
 Use specified HTTP proxy. If the port number is  not  specified, it is assumed
@@ -243,39 +120,15 @@ given proxy.
 .B proxy_user=<user:password>
 Specify user and password to use for proxy authentication.
 .TP
-.B skip_pasv_ip
-Tell viaphpfs to not use the IP address the server suggests in its response
-to viaphpfs PASV command when viaphpfs connects the data connection.
-Instead viaphpfs will re-use the same IP address it already uses for the
-control connection.
-.TP
 .B socks4
 Set the proxy type to SOCKS4.
 .TP
 .B socks5
 Set the proxy type to SOCKS5.
 .TP
-.B ssl
-Make viaphpfs use SSL/TLS for both control and data connections.
-.TP
-.B sslv3
-Forces viaphpfs to use SSL version 3 when negotiating with a remote SSL
-server.
-.TP
-.B ssl_control
-Make viaphpfs use SSL/TLS only for the control connection.
-.TP
-.B ssl_try
-Viaphpfs will try to use SSL/TLS for both the control and data connections
-but if the server doesn't support it, it will still connect unencrypted.
-.TP
 .B tcp_nodelay
 Turn on the TCP_NODELAY option. See the \fIcurl_easy_setopt(3)\fP man page for
 details about this option.
-.TP
-.B tlsv1
-(SSL) Forces viaphpfs to use TLS version 1 when negotiating with a remote TLS
-server.
 .TP
 .B transform_symlinks
 Append
@@ -286,10 +139,6 @@ structure. Otherwise those links will very probably be broken.
 .B user=<user:password>
 Specify  user  and  password  to  use for server authentication.  Overrides
 netrc configuration.
-.TP
-.B utf8
-Try to transfer file list with UTF-8 encoding. Send OPTS UTF8 ON at the  
-beginning of file list transfer.
 .SH FUSE OPTIONS
 .TP
 .B "-d"
