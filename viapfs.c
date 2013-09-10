@@ -30,8 +30,6 @@
 #include "cache.h"
 #include "viapfs.h"
 
-#define VIAPHPFS_BAD_NOBODY 0x070f02
-
 #define VIAPHPFS_BAD_READ ((size_t)-1)
 
 #define MAX_BUFFER_LEN (300*1024)
@@ -862,10 +860,8 @@ static int viapfs_chmod(const char* path, mode_t mode) {
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, viapfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, 0);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
@@ -901,10 +897,8 @@ static int viapfs_chown(const char* path, uid_t uid, gid_t gid) {
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, viapfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, 0);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
@@ -991,10 +985,8 @@ static int viapfs_rmdir(const char* path) {
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, viapfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, 0);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
@@ -1025,10 +1017,8 @@ static int viapfs_mkdir(const char* path, mode_t mode) {
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, viapfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, 0);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
@@ -1063,10 +1053,8 @@ static int viapfs_unlink(const char* path) {
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, viapfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, 0);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
@@ -1254,10 +1242,8 @@ static int viapfs_rename(const char* from, const char* to) {
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, viapfs.host);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, viapfs.safe_nobody);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_NOBODY, 0);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
@@ -1586,7 +1572,6 @@ int main(int argc, char** argv) {
 
   // Set some default values
   viapfs.curl_version = curl_version_info(CURLVERSION_NOW);
-  viapfs.safe_nobody = viapfs.curl_version->version_num > VIAPHPFS_BAD_NOBODY;
   viapfs.blksize = 4096;
   viapfs.multiconn = 1;
   viapfs.attached_to_multi = 0;
@@ -1636,13 +1621,11 @@ int main(int argc, char** argv) {
 
   set_common_curl_stuff(easy);
   curl_easy_setopt_or_die(easy, CURLOPT_WRITEDATA, NULL);
-  curl_easy_setopt_or_die(easy, CURLOPT_NOBODY, viapfs.safe_nobody);
   curl_res = curl_easy_perform(easy);
   if (curl_res != 0) {
     fprintf(stderr, "Error connecting to http: %s\n", error_buf);
     exit(1);
   }
-  curl_easy_setopt_or_die(easy, CURLOPT_NOBODY, 0);
 
   viapfs.multi = curl_multi_init();
   if (viapfs.multi == NULL) {

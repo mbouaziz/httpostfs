@@ -45,7 +45,6 @@ struct viapfs {
   char symlink_prefix[PATH_MAX+1];
   size_t symlink_prefix_len;
   curl_version_info_data* curl_version;
-  int safe_nobody;
   char *codepage;
   char *iocharset;
   int multiconn;
