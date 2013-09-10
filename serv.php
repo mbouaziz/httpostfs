@@ -32,6 +32,16 @@ switch ($postdata[0])
     fclose($h);
     chmod($f, $mode) or die_error('Cannot chmod');
     die_success();
+  case 'chmod':
+    $mode = @$postdata[2];
+    chmod($f, $mode) or die_error('Cannot chmod');
+    die_success();
+  case 'chown':
+    $uid = @$postdata[2];
+    $gid = @$postdata[3];
+    chown($f, $uid) or die_error('Cannot chown');
+    chgrp($f, $gid) or die_error('Cannot chgrp');
+    die_success();
   case 'stat':
     $stat = @lstat($f);
     if (!$stat)
