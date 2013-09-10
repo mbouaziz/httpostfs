@@ -278,3 +278,31 @@ int parse_dir(const char* list, const char* dir,
 
   return !found;
 }
+
+int parse_stat(const char* s, struct stat* sbuf) {
+
+  unsigned long long int dev, rdev;
+  unsigned long int ino, nlink;
+  long int size, blksize, blocks, atime, mtime, ctime;
+  unsigned int mode, uid, gid;
+
+  if (sscanf((char*)buf.p, "%llu%lu%u%lu%u%u%llu%ld%ld%ld%ld%ld%ld", &dev, &ino, &mode, &nlink, &uid, &gid, &rdev, &size, &blksize, &blocks, &atime, &mtime, &ctime) != 13) {
+    return 0;
+  }
+
+  sbuf->st_dev = dev;
+  sbuf->st_ino = ino;
+  sbuf->st_mode = mode;
+  sbuf->st_nlink = nlink;
+  sbuf->st_uid = uid;
+  sbuf->st_gid = gid;
+  sbuf->st_rdev = rdev;
+  sbuf->st_size = size;
+  sbuf->st_blksize = blksize;
+  sbuf->st_blocks = blocks;
+  sbuf->st_atime = atime;
+  sbuf->st_mtime = mtime;
+  sbuf->st_ctime = ctime;
+
+  return 1;
+}

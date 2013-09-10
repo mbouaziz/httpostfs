@@ -260,14 +260,16 @@ static int viapfs_getdir(const char* path, fuse_cache_dirh_t h,
 static int viapfs_getattr(const char* path, struct stat* sbuf) {
   int err;
   CURLcode curl_res;
-  char* dir_path = get_dir_path(path);
+  char* postdata = g_strdup_printf("stat\n%s\n", path);
 
-  DEBUG(2, "viapfs_getattr: %s dir_path=%s\n", path, dir_path);
+  DEBUG(2, "viapfs_getattr: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
 
   pthread_mutex_lock(&viapfs.lock);
   cancel_previous_multi();
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_res = curl_easy_perform(viapfs.connection);
@@ -275,15 +277,13 @@ static int viapfs_getattr(const char* path, struct stat* sbuf) {
 
   if (curl_res != 0) {
     DEBUG(1, "%s\n", error_buf);
+    err = 1;
   }
-  buf_null_terminate(&buf);
+  else {
+    err = !parse_stat((char*)buf.p, sbuf);
+  }
 
-  char* name = strrchr(path, '/');
-  ++name;
-  err = parse_dir((char*)buf.p, dir_path + strlen(viapfs.host) - 1,
-                  name, sbuf, NULL, 0, NULL, NULL); 
-
-  free(dir_path);
+  g_free(postdata);
   buf_free(&buf);
   if (err) return op_return(-ENOENT, "viapfs_getattr");
   return 0;
@@ -1437,6 +1437,7 @@ static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_READFUNCTION, write_data);
   curl_easy_setopt_or_die(easy, CURLOPT_ERRORBUFFER, error_buf);
   curl_easy_setopt_or_die(easy, CURLOPT_URL, viapfs.host);
+  curl_easy_setopt_or_die(easy, CURLOPT_POST, 1);
   curl_easy_setopt_or_die(easy, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
   curl_easy_setopt_or_die(easy, CURLOPT_NOSIGNAL, 1);
 

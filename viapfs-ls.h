@@ -16,4 +16,6 @@ int parse_dir(const char* list, const char* dir,
               char* linkbuf, int linklen,
               fuse_cache_dirh_t h, fuse_cache_dirfil_t filler);
 
+int parse_stat(const char* s, struct stat* sbuf);
+
 #endif  /* __VIAPHPFS_VIAPFS_LS_H__ */
