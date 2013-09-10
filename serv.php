@@ -42,6 +42,12 @@ switch ($postdata[0])
     chown($f, $uid) or die_error('Cannot chown');
     chgrp($f, $gid) or die_error('Cannot chgrp');
     die_success();
+  case 'truncate':
+    $offset = @$postdata[2];
+    $h = @fopen($f, 'c') or @fopen($f, 'x') or die_error('Cannot open');
+    ftruncate($h, $offset) or die_error('Cannot ftruncate');
+    fclose($h);
+    die_success();
   case 'stat':
     $stat = @lstat($f);
     if (!$stat)

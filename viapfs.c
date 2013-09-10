@@ -257,32 +257,32 @@ static int viapfs_getdir(const char* path, fuse_cache_dirh_t h,
   return op_return(err, "viapfs_getdir");
 }
 
-static int viapfs_getattr(const char* path, struct stat* sbuf) {
-  int err;
-  CURLcode curl_res;
-  char* postdata = g_strdup_printf("stat\n%s\n", path);
-
-  DEBUG(2, "viapfs_getattr: %s\n", path);
-  struct buffer buf;
-  buf_init(&buf);
-
+static int post(const char *postdata, const void *writedata) {
   pthread_mutex_lock(&viapfs.lock);
   cancel_previous_multi();
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_res = curl_easy_perform(viapfs.connection);
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, writedata);
+  CURLcode curl_res = curl_easy_perform(viapfs.connection);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
     DEBUG(1, "%s\n", error_buf);
-    err = 1;
-  }
-  else {
-    err = !parse_stat((char*)buf.p, sbuf);
   }
 
   g_free(postdata);
+  return curl_res;
+}
+
+static int viapfs_getattr(const char* path, struct stat* sbuf) {
+  DEBUG(2, "viapfs_getattr: %s\n", path);
+  struct buffer buf;
+  buf_init(&buf);
+
+  CURLcode curl_res = post(g_strdup_printf("stat\n%s\n", path), buf);
+
+  int err = curl_res || !parse_stat((char*)buf.p, sbuf);
+
   buf_free(&buf);
   if (err) return op_return(-ENOENT, "viapfs_getattr");
   return 0;
@@ -799,85 +799,39 @@ static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
 static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev) {
   (void) rdev;
 
-  int err = 0;
-
-  char *postdata = g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, rdev);
-
   DEBUG(1, "viapfs_mknode: mode=%d\n", (int)mode);
 
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  pthread_mutex_unlock(&viapfs.lock);
+  CURLcode curl_res = post(g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, rdev), NULL);
 
-  if (curl_res != 0) {
-    err = -EPERM;
-  }	
-  g_free(postdata);
+  int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_mknod");
 }
 
 static int viapfs_chmod(const char* path, mode_t mode) {
-  int err = 0;
-
-  char *postdata = g_strdup_printf("chmod\n%s\n%u\n", path, mode);
-
   DEBUG(1, "viapfs_chmod: %d\n", (int)mode);
 
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  pthread_mutex_unlock(&viapfs.lock);
+  CURLcode curl_res = post(g_strdup_printf("chmod\n%s\n%u\n", path, mode), NULL);
 
-  if (curl_res != 0) {
-    err = -EPERM;
-  }	
-  g_free(postdata);
+  int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_chmod");
 }
 
 static int viapfs_chown(const char* path, uid_t uid, gid_t gid) {
-  int err = 0;
-  
-  char *postdata = g_strdup_printf("chown\n%s\n%u\n%u\n", path, uid, gid);
-
   DEBUG(1, "viapfs_chown: %u %u\n", uid, gid);
 
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  pthread_mutex_unlock(&viapfs.lock);
+  CURLcode curl_res = post(g_strdup_printf("chown\n%s\n%u\n%u\n", path, uid, gid), NULL);
 
-  if (curl_res != 0) {
-    err = -EPERM;
-  }	
-  g_free(postdata);
+  int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_chown");
 }
 
 static int viapfs_truncate(const char* path, off_t offset) {
   DEBUG(1, "viapfs_truncate: %s len=%lld\n", path, offset);
-  /* we can't use viapfs_mknod here, because we don't know the right permissions */
-  if (offset == 0) return op_return(create_empty_file(path), "viapfs_truncate");
 
-  /* fix openoffice problem, truncating exactly to file length */
-  
-  __off_t size = (long long int)test_size(path); 
-  DEBUG(1, "viapfs_truncate: %s check filesize=%lld\n", path, (long long int)size);
-  
-  if (offset == size)  
-	  return op_return(0, "viapfs_ftruncate");
-  
-  DEBUG(1, "viapfs_truncate problem: %s offset != 0 or filesize=%lld != offset\n", path, (long long int)size);
-  
-  
-  return op_return(-EPERM, "viapfs_truncate");
+  CURLcode curl_res = post(g_strdup_printf("truncate\n%s\n%lld\n", path, offset));
+
+  int err = curl_res ? -EPERM : 0;
+  return op_return(err, "viapfs_truncate");
 }
 
 static int viapfs_ftruncate(const char * path , off_t offset, struct fuse_file_info * fi)
