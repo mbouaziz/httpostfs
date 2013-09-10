@@ -799,7 +799,7 @@ static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
 static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev) {
   (void) rdev;
 
-  DEBUG(1, "viapfs_mknode: mode=%d\n", (int)mode);
+  DEBUG(1, "viapfs_mknode: mode=%u\n", mode);
 
   CURLcode curl_res = post(g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, rdev), NULL);
 
@@ -808,7 +808,7 @@ static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev) {
 }
 
 static int viapfs_chmod(const char* path, mode_t mode) {
-  DEBUG(1, "viapfs_chmod: %d\n", (int)mode);
+  DEBUG(1, "viapfs_chmod: %u\n", mode);
 
   CURLcode curl_res = post(g_strdup_printf("chmod\n%s\n%u\n", path, mode), NULL);
 
@@ -877,70 +877,16 @@ static int viapfs_rmdir(const char* path) {
 }
 
 static int viapfs_mkdir(const char* path, mode_t mode) {
-  int err = 0;
-  struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path);
-  char* filename = get_file_name(path);
-  char* cmd = g_strdup_printf("MKD %s", filename);
-  struct buffer buf;
-  buf_init(&buf);
+  CURLcode curl_res = post(g_strdup_printf("mkdir\n%s\n%u\n", path, mode), NULL);
 
-  header = curl_slist_append(header, cmd);
-
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (curl_res != 0) {
-    err = -EPERM;
-  }
-  
-  buf_free(&buf);
-  curl_slist_free_all(header);
-  free(full_path);
-  free(filename);
-  free(cmd);
-
-  if (!err)
-    viapfs_chmod(path, mode);
-
+  int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_mkdir");
 }
 
 static int viapfs_unlink(const char* path) {
-  int err = 0;
-  struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path);
-  char* filename = get_file_name(path);
-  char* cmd = g_strdup_printf("DELE %s", filename);
-  struct buffer buf;
-  buf_init(&buf);
+  CURLcode curl_res = post(g_strdup_printf("unlink\n%s\n", path), NULL);
 
-  header = curl_slist_append(header, cmd);
-
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (curl_res != 0) {
-    err = -EPERM;
-  }
-  
-  buf_free(&buf);
-  curl_slist_free_all(header);
-  free(full_path);
-  free(filename);
-  free(cmd);
+  int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_unlink");
 }
 
@@ -1097,69 +1043,27 @@ static int viapfs_release(const char* path, struct fuse_file_info* fi) {
 
 static int viapfs_rename(const char* from, const char* to) {
   DEBUG(1, "viapfs_rename from %s to %s\n", from, to);
-  int err = 0;
-  char* rnfr = g_strdup_printf("RNFR %s", from + 1);
-  char* rnto = g_strdup_printf("RNTO %s", to + 1);
-  struct buffer buf;
-  buf_init(&buf);
-  struct curl_slist* header = NULL;
 
-  if (viapfs.codepage) {
-    convert_charsets(viapfs.iocharset, viapfs.codepage, &rnfr);
-    convert_charsets(viapfs.iocharset, viapfs.codepage, &rnto);
-  }
+  CURLcode curl_res = post(g_strdup_printf("rename\n%s\n", from, to), NULL);
 
-  header = curl_slist_append(header, rnfr);
-  header = curl_slist_append(header, rnto);
-
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, viapfs.host);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (curl_res != 0) {
-    err = -EPERM;
-  }
-  
-  buf_free(&buf);
-  curl_slist_free_all(header);
-  free(rnfr);
-  free(rnto);
-
+  int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_rename");
 }
 
 static int viapfs_readlink(const char *path, char *linkbuf, size_t size) {
-  int err;
-  CURLcode curl_res;
-  char* dir_path = get_dir_path(path);
-
-  DEBUG(2, "dir_path: %s %s\n", path, dir_path);
+  DEBUG(2, "dir_path: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
 
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, dir_path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_res = curl_easy_perform(viapfs.connection);
-  pthread_mutex_unlock(&viapfs.lock);
+  CURLcode curl_res = post(g_strdup_printf("readlink\n%s\n", path), buf);
 
-  if (curl_res != 0) {
-    DEBUG(1, "%s\n", error_buf);
+  int err = curl_res || buf.len > (size+1);
+
+  if (!err) {
+    memcpy(linkbuf, buf.p, buf.len);
+    linkbuf[buf.len] = 0;
   }
-  buf_null_terminate(&buf);
 
-  char* name = strrchr(path, '/');
-  ++name;
-  err = parse_dir((char*)buf.p, dir_path + strlen(viapfs.host) - 1,
-                  name, NULL, linkbuf, size, NULL, NULL); 
-
-  free(dir_path);
   buf_free(&buf);
   if (err) return op_return(-ENOENT, "viapfs_readlink");
   return op_return(0, "viapfs_readlink");
