@@ -27,25 +27,6 @@ char* get_file_name(const char* path) {
   return ret;
 }
 
-char* get_fulldir_path(const char* path) {
-  char* ret;
-  char* converted_path = NULL;
-
-  ++path;
-
-  if (viapfs.codepage && strlen(path)) {
-    converted_path = strdup(path);
-    convert_charsets(viapfs.iocharset, viapfs.codepage, &converted_path);
-    path = converted_path;
-  }
-
-  ret = g_strdup_printf("%s%s%s", viapfs.host, path, strlen(path) ? "/" : "");
-
-  free(converted_path);
-
-  return ret;
-}
-
 char* get_dir_path(const char* path) {
   char* ret;
   char* converted_path = NULL;

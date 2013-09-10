@@ -229,15 +229,14 @@ static int viapfs_getdir(const char* path, fuse_cache_dirh_t h,
                         fuse_cache_dirfil_t filler) {
   int err = 0;
   CURLcode curl_res;
-  char* dir_path = get_fulldir_path(path);
 
-  DEBUG(1, "viapfs_getdir: %s\n", dir_path);
+  DEBUG(1, "viapfs_getdir: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
 
   pthread_mutex_lock(&viapfs.lock);
   cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, dir_path);
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_res = curl_easy_perform(viapfs.connection);
   pthread_mutex_unlock(&viapfs.lock);
@@ -247,11 +246,10 @@ static int viapfs_getdir(const char* path, fuse_cache_dirh_t h,
     err = -EIO;
   } else {
     buf_null_terminate(&buf);
-    parse_dir((char*)buf.p, dir_path + strlen(viapfs.host) - 1,
+    parse_dir((char*)buf.p, path + strlen(viapfs.host) - 1,
               NULL, NULL, NULL, 0, h, filler); 
   }
 
-  free(dir_path);
   buf_free(&buf);
   return op_return(err, "viapfs_getdir");
 }
@@ -1046,7 +1044,7 @@ static int viapfs_rename(const char* from, const char* to) {
 }
 
 static int viapfs_readlink(const char *path, char *linkbuf, size_t size) {
-  DEBUG(2, "dir_path: %s\n", path);
+  DEBUG(2, "readlink: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
 
