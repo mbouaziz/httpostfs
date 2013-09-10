@@ -12,7 +12,12 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <pthread.h>
-#include <pthread.h>
+#include <fuse.h>
+#include <fuse_opt.h>
+
+#ifndef FUSE_VERSION
+#define FUSE_VERSION (FUSE_MAJOR_VERSION * 10 + FUSE_MINOR_VERSION)
+#endif
 
 struct viapfs {
   char* host;

@@ -27,7 +27,6 @@
 #include "charset_utils.h"
 #include "path_utils.h"
 #include "viapfs-ls.h"
-#include "cache.h"
 #include "viapfs.h"
 
 #define VIAPHPFS_BAD_READ ((size_t)-1)
@@ -1321,8 +1320,7 @@ static int viapfs_statfs(const char *path, struct statfs *buf)
 }
 #endif
 
-static struct fuse_cache_operations viapfs_oper = {
-  .oper = {
+static struct fuse_operations viapfs_oper = {
 //    .init       = viapfs_init,
     .getattr    = viapfs_getattr,
     .readlink   = viapfs_readlink,
@@ -1348,8 +1346,6 @@ static struct fuse_cache_operations viapfs_oper = {
     .ftruncate  = viapfs_ftruncate,
 //    .fgetattr   = viapfs_fgetattr,
 #endif
-  },
-  .cache_getdir = viapfs_getdir,
 };
 
 static int viaphpfs_fuse_main(struct fuse_args *args)
@@ -1433,15 +1429,7 @@ static void usage(const char* progname) {
 "    ipv6                resolve name to IPv6 address\n"
 "    codepage=STR        set the codepage the server uses\n"
 "    iocharset=STR       set the charset used by the client\n"
-"\n"
-"ViaPhpFS cache options:  \n"
-"    cache=yes|no              enable/disable cache (default: yes)\n"
-"    cache_timeout=SECS        set timeout for stat, dir, link at once\n"
-"                              default is %d seconds\n"
-"    cache_stat_timeout=SECS   set stat timeout\n"
-"    cache_dir_timeout=SECS    set dir timeout\n"
-"    cache_link_timeout=SECS   set link timeout\n"          
-"\n", progname, DEFAULT_CACHE_TIMEOUT);
+"\n", progname);
 }
 
 static void set_common_curl_stuff(CURL* easy) {
