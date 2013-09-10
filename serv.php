@@ -15,6 +15,11 @@ function die_success($echo = '')
 {
   die $echo;
 }
+function die_with($b, $msg)
+{
+  if ($b) die_error($msg);
+  else die_success();
+}
 
 $postdata = file('php://input');
 
@@ -30,24 +35,28 @@ switch ($postdata[0])
     $mode = @$postdata[2];
     $h = @fopen($f, 'w') or die_error('Cannot open');
     fclose($h);
-    chmod($f, $mode) or die_error('Cannot chmod');
-    die_success();
+    die_with(chmod($f, $mode), 'Cannot chmod');
   case 'chmod':
     $mode = @$postdata[2];
-    chmod($f, $mode) or die_error('Cannot chmod');
-    die_success();
+    die_with(chmod($f, $mode), 'Cannot chmod');
   case 'chown':
     $uid = @$postdata[2];
     $gid = @$postdata[3];
     chown($f, $uid) or die_error('Cannot chown');
-    chgrp($f, $gid) or die_error('Cannot chgrp');
-    die_success();
+    die_with(chgrp($f, $gid), 'Cannot chgrp');
   case 'truncate':
     $offset = @$postdata[2];
     $h = @fopen($f, 'c') or @fopen($f, 'x') or die_error('Cannot open');
     ftruncate($h, $offset) or die_error('Cannot ftruncate');
-    fclose($h);
-    die_success();
+    die_with(fclose($h), 'Cannot fclose');
+  case 'utime':
+    $actime = @$postdata[2];
+    $modtime = @$postdata[3];
+    die_with(touch($f, $modtime, $actime), 'Cannot touch');
+  case 'utimenow':
+    die_with(touch($f), 'Cannot touch');
+  case 'rmdir':
+    die_with(rmdir($f), 'Cannot rmdir');
   case 'stat':
     $stat = @lstat($f);
     if (!$stat)

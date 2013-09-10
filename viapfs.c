@@ -862,43 +862,17 @@ static int viapfs_ftruncate(const char * path , off_t offset, struct fuse_file_i
 }
 
 static int viapfs_utime(const char* path, struct utimbuf* time) {
-  (void) path;
-  (void) time;
-  return op_return(0, "viapfs_utime");
+  char *postdata = time ? g_strdup_printf("utime\n%s\n%ld\n%ld\n", path, time.actime, time.modtime) : g_strdup_printf("utimenow\n%s\n", path);
+  CURLcode curl_res = post(postdata, NULL);
+
+  int err = curl_res ? -EPERM : 0;
+  return op_return(err, "viapfs_utime");
 }
 
 static int viapfs_rmdir(const char* path) {
-  int err = 0;
-  struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path);
-  char* filename = get_file_name(path);
-  char* cmd = g_strdup_printf("RMD %s", filename);
-  struct buffer buf;
-  buf_init(&buf);
+  CURLcode curl_res = post(g_strdup_printf("rmdir\n%s\n", path), NULL);
 
-  DEBUG(2, "%s\n", full_path);
-  DEBUG(2, "%s\n", cmd);
-
-  header = curl_slist_append(header, cmd);
-
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (curl_res != 0) {
-    err = -EPERM;
-  }
-  
-  buf_free(&buf);
-  curl_slist_free_all(header);
-  free(full_path);
-  free(filename);
-  free(cmd);
+  int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_rmdir");
 }
 
