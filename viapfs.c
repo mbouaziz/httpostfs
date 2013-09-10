@@ -99,8 +99,7 @@ struct viapfs_file {
   int can_shrink;
   pthread_t thread_id;
   mode_t mode;
-  char * open_path;
-  char * full_path;
+  char * path;
   struct buffer stream_buf;
   CURL *write_conn;
   sem_t data_avail;
@@ -295,7 +294,7 @@ static int check_running() {
   return running_handles;
 }
 
-static size_t viapfs_read_chunk(const char* full_path, char* rbuf,
+static size_t viapfs_read_chunk(const char* path, char* rbuf,
                                size_t size, off_t offset,
                                struct fuse_file_info* fi,
                                int update_offset) {
@@ -304,7 +303,7 @@ static size_t viapfs_read_chunk(const char* full_path, char* rbuf,
   struct viapfs_file* fh = get_viapfs_file(fi);
 
   DEBUG(2, "viapfs_read_chunk: %s %p %zu %lld %p %p\n",
-        full_path, rbuf, size, offset, fi, fh);
+        path, rbuf, size, offset, fi, fh);
 
   pthread_mutex_lock(&viapfs.lock);
 
@@ -328,7 +327,7 @@ static size_t viapfs_read_chunk(const char* full_path, char* rbuf,
 
       cancel_previous_multi();
       
-      curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
+      curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, path);
       curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &fh->buf);
       if (offset) {
         char range[15];
@@ -471,10 +470,10 @@ static void *viapfs_write_thread(void *data) {
   struct viapfs_file *fh = data;
   char range[15];
   
-  DEBUG(2, "enter streaming write thread #%d path=%s pos=%lld\n", ++write_thread_ctr, fh->full_path, fh->pos);
+  DEBUG(2, "enter streaming write thread #%d path=%s pos=%lld\n", ++write_thread_ctr, fh->path, fh->pos);
   
   
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_URL, fh->full_path);
+  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_URL, fh->path);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_UPLOAD, 1);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_INFILESIZE, -1);
   curl_easy_setopt_or_die(fh->write_conn, CURLOPT_READFUNCTION, write_data_bg);
@@ -582,8 +581,7 @@ static int finish_write_thread(struct viapfs_file *fh)
 static void free_viapfs_file(struct viapfs_file *fh) {
   if (fh->write_conn)
     curl_easy_cleanup(fh->write_conn);
-  g_free(fh->full_path);
-  g_free(fh->open_path);
+  g_free(fh->path);
   sem_destroy(&fh->data_avail);
   sem_destroy(&fh->data_need);
   sem_destroy(&fh->data_written);
@@ -597,7 +595,7 @@ static int buffer_file(struct viapfs_file *fh) {
   // don't support resume for uploads.
   pthread_mutex_lock(&viapfs.lock);
   cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, fh->full_path);
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, fh->path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &fh->buf);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   pthread_mutex_unlock(&viapfs.lock);
@@ -668,8 +666,7 @@ static int viapfs_open_common(const char* path, mode_t mode,
   sem_init(&fh->data_need, 0, 0);
   sem_init(&fh->data_written, 0, 0);
   sem_init(&fh->ready, 0, 0); */
-  fh->open_path = strdup(path);
-  fh->full_path = get_full_path(path);
+  fh->path = strdup(path);
   fh->written_flag = 0;
   fh->write_fail_cause = CURLE_OK;
   fh->curl_error_buffer[0] = '\0';
@@ -683,7 +680,7 @@ static int viapfs_open_common(const char* path, mode_t mode,
       // If it's read-only, we can load the file a bit at a time, as necessary.
       DEBUG(1, "opening %s O_RDONLY\n", path);
       fh->can_shrink = 1;
-      size_t size = viapfs_read_chunk(fh->full_path, NULL, 1, 0, fi, 0);
+      size_t size = viapfs_read_chunk(fh->path, NULL, 1, 0, fi, 0);
 
       if (size == VIAPHPFS_BAD_READ) {
         DEBUG(1, "initial read failed size=%d\n", size);
@@ -783,9 +780,7 @@ static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
 	  return op_return(-EIO, "viapfs_read");
   }
   
-  char *full_path = get_full_path(path);
-  size_t size_read = viapfs_read_chunk(full_path, rbuf, size, offset, fi, 1);
-  free(full_path);
+  size_t size_read = viapfs_read_chunk(path, rbuf, size, offset, fi, 1);
   if (size_read == VIAPHPFS_BAD_READ) {
     ret = -EIO;
   } else {
@@ -844,7 +839,7 @@ static int viapfs_ftruncate(const char * path , off_t offset, struct fuse_file_i
 	 if (fh->pos == 0)
 	 {
 		 fh->write_may_start=1;
-		 return op_return(create_empty_file(fh->open_path), "viapfs_ftruncate");
+		 return op_return(create_empty_file(fh->path), "viapfs_ftruncate");
 	 }
 	 return op_return(-EPERM, "viapfs_ftruncate");
   }
