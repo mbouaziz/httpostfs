@@ -270,7 +270,6 @@ static int viapfs_getattr(const char* path, struct stat* sbuf) {
   cancel_previous_multi();
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, dir_path);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
   curl_res = curl_easy_perform(viapfs.connection);
   pthread_mutex_unlock(&viapfs.lock);
@@ -610,29 +609,6 @@ static int buffer_file(struct viapfs_file *fh) {
   return 0;
 }
 
-static int create_empty_file(const char * path)
-{
-  int err = 0;
-
-  char *full_path = get_full_path(path);
-
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_INFILESIZE, 0);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_UPLOAD, 1);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_READDATA, NULL);
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_UPLOAD, 0);
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (curl_res != 0) {
-    err = -EPERM;
-  }	
-  free(full_path);
-  return err;
-}
-
 static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev);
 static int viapfs_chmod(const char* path, mode_t mode);
 
@@ -825,53 +801,42 @@ static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev) {
 
   int err = 0;
 
+  char *postdata = g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, rdev);
+
   DEBUG(1, "viapfs_mknode: mode=%d\n", (int)mode);
-  
-  if ((mode & S_IFMT) != S_IFREG)
-    return -EPERM;
 
-  err = create_empty_file(path);
- 
-  if (!err)
-      viapfs_chmod(path, mode);
+  pthread_mutex_lock(&viapfs.lock);
+  cancel_previous_multi();
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
+  CURLcode curl_res = curl_easy_perform(viapfs.connection);
+  pthread_mutex_unlock(&viapfs.lock);
 
+  if (curl_res != 0) {
+    err = -EPERM;
+  }	
+  g_free(postdata);
   return op_return(err, "viapfs_mknod");
 }
 
 static int viapfs_chmod(const char* path, mode_t mode) {
   int err = 0;
 
-  // We can only process a subset of the mode - so strip
-  // to supported subset
-  int mode_c = mode - (mode / 0x1000 * 0x1000);
-  
-  struct curl_slist* header = NULL;
-  char* full_path = get_dir_path(path);
-  char* filename = get_file_name(path);
-  char* cmd = g_strdup_printf("SITE CHMOD %.3o %s", mode_c, filename);
-  struct buffer buf;
-  buf_init(&buf);
+  char *postdata = g_strdup_printf("chmod\n%s\n%u\n", path, mode);
 
-  header = curl_slist_append(header, cmd);
+  DEBUG(1, "viapfs_chmod: mode=%d\n", (int)mode);
 
   pthread_mutex_lock(&viapfs.lock);
   cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, header);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, full_path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTQUOTE, NULL);
   pthread_mutex_unlock(&viapfs.lock);
 
   if (curl_res != 0) {
     err = -EPERM;
-  }
-  
-  buf_free(&buf);
-  curl_slist_free_all(header);
-  free(full_path);
-  free(filename);
-  free(cmd); 
+  }	
+  g_free(postdata);
   return op_return(err, "viapfs_chmod");
 }
 
