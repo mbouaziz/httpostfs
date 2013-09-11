@@ -27,15 +27,11 @@
 #include "charset_utils.h"
 #include "viapfs.h"
 
-#define VIAPHPFS_BAD_READ ((size_t)-1)
-
-#define MAX_BUFFER_LEN (300*1024)
-
 struct viapfs viapfs;
 static char error_buf[CURL_ERROR_SIZE];
 
 struct buffer {
-  uint8_t* p;
+  char* p;
   size_t len;
   size_t size;
   off_t begin_offset;
@@ -65,7 +61,7 @@ static inline void buf_clear(struct buffer *buf)
 static int buf_resize(struct buffer *buf, size_t len)
 {
     buf->size = (buf->len + len + 63) & ~31;
-    buf->p = (uint8_t *) realloc(buf->p, buf->size);
+    buf->p = realloc(buf->p, buf->size);
     if (!buf->p) {
         fprintf(stderr, "viapfs: memory allocation failed\n");
         return -1;
@@ -159,10 +155,10 @@ static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
     }\
   }while(0)
 
-static int post(const char *postdata, const void *writedata) {
+static int post(gchar *postdata, const void *writedata) {
   pthread_mutex_lock(&viapfs.lock);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
+  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSIZE, strlen(postdata));
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, writedata);
   CURLcode curl_res = curl_easy_perform(viapfs.connection);
   pthread_mutex_unlock(&viapfs.lock);
@@ -177,6 +173,7 @@ static int post(const char *postdata, const void *writedata) {
 
 static int viapfs_readdir(const char* path, void *rbuf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
 {
+  (void) offset; (void) fi;
   DEBUG(1, "viapfs_readdir: %s\n", path);
 
   struct buffer buf;
@@ -190,7 +187,8 @@ static int viapfs_readdir(const char* path, void *rbuf, fuse_fill_dir_t filler, 
   }
   else {
     buf_null_terminate(&buf);
-    for (char* entry = strtok(buf.p, "\n"); entry; entry = strtok(NULL, "\n"))
+    char* entry = strtok(buf.p, "\n");
+    for (; entry; entry = strtok(NULL, "\n"))
       if (filler(rbuf, entry, NULL, 0))
         break;
   }
@@ -198,11 +196,6 @@ static int viapfs_readdir(const char* path, void *rbuf, fuse_fill_dir_t filler, 
   buf_free(&buf);
 
   return op_return(err, "viapfs_readdir");
-}
-
-int parse_stat(const char* s, struct stat* sbuf) {
-
-  return 1;
 }
 
 static int viapfs_getattr(const char* path, struct stat* sbuf) {
@@ -222,7 +215,7 @@ static int viapfs_getattr(const char* path, struct stat* sbuf) {
     long int size, blksize, blocks, atime, mtime, ctime;
     unsigned int mode, uid, gid;
 
-    if (sscanf((char*)buf.p, "%llu%lu%u%lu%u%u%llu%ld%ld%ld%ld%ld%ld", &dev, &ino, &mode, &nlink, &uid, &gid, &rdev, &size, &blksize, &blocks, &atime, &mtime, &ctime) != 13) {
+    if (sscanf(buf.p, "%llu%lu%u%lu%u%u%llu%ld%ld%ld%ld%ld%ld", &dev, &ino, &mode, &nlink, &uid, &gid, &rdev, &size, &blksize, &blocks, &atime, &mtime, &ctime) != 13) {
       err = -ENOENT;
     }
     else {
@@ -248,9 +241,8 @@ static int viapfs_getattr(const char* path, struct stat* sbuf) {
 
 static int viapfs_open_common(const char* path, mode_t mode,
                               struct fuse_file_info* fi) {
-  char* flagsAsStr = flags_to_string(fi->flags);
-  DEBUG(2, "viapfs_open_common: %s mode=%u flags=%s\n", path, mode, flagsAsStr);
-  g_free(flagsAsStr);
+  DEBUG(2, "viapfs_open_common: %s mode=%u flags=%o\n", path, mode, fi->flags);
+
   // TODO: handle append correctly
   CURLcode curl_res = post(g_strdup_printf("open\n%s\n%u\n%d\n", path, mode, fi->flags), NULL);
 
@@ -272,20 +264,20 @@ static int viapfs_create(const char* path, mode_t mode,
 
 static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
                       struct fuse_file_info* fi) {
+  (void) fi;
   DEBUG(1, "viapfs_read: %s size=%zu offset=%ld\n", path, size, offset);
 
   struct buffer buf;
   buf_init(&buf);
 
-  CURLcode curl_res = post(g_strdup_printf("read\n%s\n%u\n%ld\n", path, size, offset), &buf);
+  CURLcode curl_res = post(g_strdup_printf("read\n%s\n%zu\n%ld\n", path, size, offset), &buf);
 
   int ret = 0;
   if (curl_res) {
-    err = -EIO;
+    ret = -EIO;
   }
   else {
-    ret = size;
-    ret <?= buf.len;
+    ret = size < buf.len ? size : buf.len;
     memcpy(rbuf, buf.p, ret);
   }
   buf_free(&buf);
@@ -297,7 +289,7 @@ static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
 static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev) {
   DEBUG(1, "viapfs_mknode: mode=%u\n", mode);
 
-  CURLcode curl_res = post(g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, rdev), NULL);
+  CURLcode curl_res = post(g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, (unsigned long long)rdev), NULL);
 
   int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_mknod");
@@ -322,16 +314,16 @@ static int viapfs_chown(const char* path, uid_t uid, gid_t gid) {
 }
 
 static int viapfs_truncate(const char* path, off_t offset) {
-  DEBUG(1, "viapfs_truncate: %s len=%lld\n", path, offset);
+  DEBUG(1, "viapfs_truncate: %s len=%ld\n", path, offset);
 
-  CURLcode curl_res = post(g_strdup_printf("truncate\n%s\n%lld\n", path, offset));
+  CURLcode curl_res = post(g_strdup_printf("truncate\n%s\n%ld\n", path, offset), NULL);
 
   int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_truncate");
 }
 
 static int viapfs_utime(const char* path, struct utimbuf* time) {
-  char *postdata = time ? g_strdup_printf("utime\n%s\n%ld\n%ld\n", path, time.actime, time.modtime) : g_strdup_printf("utimenow\n%s\n", path);
+  char *postdata = time ? g_strdup_printf("utime\n%s\n%ld\n%ld\n", path, time->actime, time->modtime) : g_strdup_printf("utimenow\n%s\n", path);
   CURLcode curl_res = post(postdata, NULL);
 
   int err = curl_res ? -EPERM : 0;
@@ -361,9 +353,10 @@ static int viapfs_unlink(const char* path) {
 
 static int viapfs_write(const char *path, const char *wbuf, size_t size,
                        off_t offset, struct fuse_file_info *fi) {
-  gchar* wbufb64 = g_base64_encode(wbuf, size);
+  (void) fi;
+  gchar* wbufb64 = g_base64_encode((guchar*)wbuf, size);
   
-  CURLcode curl_res = post(g_strdup_printf("write\n%s\n%ld\n%u\n%s\n", path, offset, size, wbufb64), NULL);
+  CURLcode curl_res = post(g_strdup_printf("write\n%s\n%ld\n%zu\n%s\n", path, offset, size, wbufb64), NULL);
 
   g_free(wbufb64);
 
@@ -372,6 +365,7 @@ static int viapfs_write(const char *path, const char *wbuf, size_t size,
 }
 
 static int viapfs_release(const char* path, struct fuse_file_info* fi) {
+  (void) fi;
   DEBUG(1, "viapfs_release %s\n", path);
 
   return op_return(0, "viapfs_release"); 
@@ -381,7 +375,7 @@ static int viapfs_release(const char* path, struct fuse_file_info* fi) {
 static int viapfs_rename(const char* from, const char* to) {
   DEBUG(1, "viapfs_rename from %s to %s\n", from, to);
 
-  CURLcode curl_res = post(g_strdup_printf("rename\n%s\n", from, to), NULL);
+  CURLcode curl_res = post(g_strdup_printf("rename\n%s\n%s\n", from, to), NULL);
 
   int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_rename");
@@ -392,7 +386,7 @@ static int viapfs_symlink(const char* target, const char* link) {
 
   // todo: transform_symlink with symlink_prefix
 
-  CURLcode curl_res = post(g_strdup_printf("symlink\n%s\n", target, link), NULL);
+  CURLcode curl_res = post(g_strdup_printf("symlink\n%s\n%s\n", target, link), NULL);
 
   int err = curl_res ? -EPERM : 0;
   return op_return(err, "viapfs_symlink");
@@ -475,9 +469,9 @@ static struct fuse_operations viapfs_oper = {
 static int viaphpfs_fuse_main(struct fuse_args *args)
 {
 #if FUSE_VERSION >= 26
-    return fuse_main(args->argc, args->argv, cache_init(&viapfs_oper), NULL);
+    return fuse_main(args->argc, args->argv, &viapfs_oper, NULL);
 #else
-    return fuse_main(args->argc, args->argv, cache_init(&viapfs_oper));
+    return fuse_main(args->argc, args->argv, &viapfs_oper);
 #endif
 }
 
@@ -491,7 +485,6 @@ static int viapfs_opt_proc(void* data, const char* arg, int key,
       return 1;
     case FUSE_OPT_KEY_NONOPT:
       if (!viapfs.host) {
-        const char* prefix = "";
         if (strncmp(arg, "http://", 6) && strncmp(arg, "https://", 7))
           viapfs.host = g_strdup_printf("http://%s", arg);
         else
@@ -701,10 +694,6 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Error initializing libcurl\n");
     exit(1);
   }
-
-  res = cache_parse_options(&args);
-  if (res == -1)
-    exit(1);
 
   checkpasswd("host", &viapfs.user);
   checkpasswd("proxy", &viapfs.proxy_user);

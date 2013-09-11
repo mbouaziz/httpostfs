@@ -14,6 +14,8 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#include "viapfs.h"
+
 int convert_charsets(const char* from, const char* to, char** str) {
   iconv_t cd;
   char* s = *str;

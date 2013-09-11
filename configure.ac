@@ -21,7 +21,7 @@ if test "$libcurl_protocol_HTTP" != yes; then
 	AC_MSG_ERROR(["We need libcurl with support for HTTP protocol."])
 fi
 
-CFLAGS="$CFLAGS -Wall -W -Wno-sign-compare -D_REENTRANT $GLIB_CFLAGS $FUSE_CFLAGS $LIBCURL_CPPFLAGS"
+CFLAGS="$CFLAGS -Wall -W -D_REENTRANT $GLIB_CFLAGS $FUSE_CFLAGS $LIBCURL_CPPFLAGS"
 LIBS="$GLIB_LIBS $FUSE_LIBS $LIBCURL"
 
 have_fuse_opt_parse=no
@@ -41,7 +41,6 @@ AC_TYPE_SIZE_T
 AC_CHECK_MEMBERS([struct stat.st_blksize])
 AC_STRUCT_ST_BLOCKS
 AC_CHECK_MEMBERS([struct stat.st_rdev])
-AC_TYPE_UINT8_T
 
 # Checks for library functions.
 AC_FUNC_MALLOC
