@@ -1,7 +1,7 @@
 ## Process this file with automake to produce Makefile.in
 SUBDIRS = compat doc
 
-DIST_SUBDIRS = $(SUBDIRS) tests
+DIST_SUBDIRS = $(SUBDIRS)
 
 LIBICONV = @LIBICONV@
 
@@ -19,12 +19,5 @@ endif
 
 noinst_LIBRARIES = libviaphpfs.a
 
-libviaphpfs_a_SOURCES = cache.c cache.h \
-			 viapfs-ls.c viapfs-ls.h \
-			 charset_utils.c charset_utils.h \
-			 path_utils.c path_utils.h viapfs.h
-
-check: test
-
-test:
-	@(cd tests; $(MAKE) test)
+libviaphpfs_a_SOURCES =	 charset_utils.c charset_utils.h \
+			 viapfs.h

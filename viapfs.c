@@ -25,8 +25,6 @@
 #include <assert.h>
 
 #include "charset_utils.h"
-#include "path_utils.h"
-#include "viapfs-ls.h"
 #include "viapfs.h"
 
 #define VIAPHPFS_BAD_READ ((size_t)-1)
