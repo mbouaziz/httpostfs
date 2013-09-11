@@ -91,30 +91,6 @@ static void buf_null_terminate(struct buffer *buf)
         exit(1);
 }
 
-struct viapfs_file {
-  struct buffer buf;
-  int dirty;
-  int copied;
-  off_t last_offset;
-  int can_shrink;
-  pthread_t thread_id;
-  mode_t mode;
-  char * path;
-  struct buffer stream_buf;
-  CURL *write_conn;
-  sem_t data_avail;
-  sem_t data_need;
-  sem_t data_written;
-  sem_t ready;
-  int isready;
-  int eof;
-  int written_flag;
-  int write_fail_cause;
-  int write_may_start;
-  char curl_error_buffer[CURL_ERROR_SIZE];
-  off_t pos;
-};
-
 enum {
   KEY_HELP,
   KEY_VERBOSE,
@@ -124,13 +100,11 @@ enum {
 #define VIAPFS_OPT(t, p, v) { t, offsetof(struct viapfs, p), v }
 
 static struct fuse_opt viapfs_opts[] = {
-  VIAPFS_OPT("viapfs_debug=%u",     debug, 0),
+  VIAPFS_OPT("viapfs_debug=%u",    debug, 0),
   VIAPFS_OPT("transform_symlinks", transform_symlinks, 1),
-  VIAPFS_OPT("custom_list=%s",     custom_list, 0),
   VIAPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
   VIAPFS_OPT("connect_timeout=%u", connect_timeout, 0),
   VIAPFS_OPT("interface=%s",       interface, 0),
-  VIAPFS_OPT("krb4=%s",            krb4, 0),
   VIAPFS_OPT("proxy=%s",           proxy, 0),
   VIAPFS_OPT("proxytunnel",        proxytunnel, 1),
   VIAPFS_OPT("proxy_anyauth",      proxyanyauth, 1),
@@ -146,7 +120,6 @@ static struct fuse_opt viapfs_opts[] = {
   VIAPFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
   VIAPFS_OPT("codepage=%s",        codepage, 0),
   VIAPFS_OPT("iocharset=%s",       iocharset, 0),
-  VIAPFS_OPT("nomulticonn",        multiconn, 0),
 
   FUSE_OPT_KEY("-h",             KEY_HELP),
   FUSE_OPT_KEY("--help",         KEY_HELP),
@@ -157,28 +130,6 @@ static struct fuse_opt viapfs_opts[] = {
   FUSE_OPT_END
 };
 
-static struct viapfs_file *get_viapfs_file(struct fuse_file_info *fi)
-{
-  return (struct viapfs_file *) (uintptr_t) fi->fh;
-}
-
-static void cancel_previous_multi()
-{
-  //curl_multi_cleanup(viapfs.multi);
-  
-  if (!viapfs.attached_to_multi) return;
-  
-  DEBUG(1, "cancel previous multi\n");
-  
-  CURLMcode curlMCode = curl_multi_remove_handle(viapfs.multi, viapfs.connection);
-  if (curlMCode != CURLE_OK)
-  {
-      fprintf(stderr, "curl_multi_remove_handle problem: %d\n", curlMCode);
-      exit(1);
-  }
-  viapfs.attached_to_multi = 0;  
-}
-
 static int op_return(int err, char * operation)
 {
 	if(!err)
@@ -188,21 +139,6 @@ static int op_return(int err, char * operation)
 	}
 	fprintf(stderr, "viapfs: operation %s failed because %s\n", operation, strerror(-err));
 	return err;
-}
-
-
-static size_t write_data(void *ptr, size_t size, size_t nmemb, void *data) {
-  struct viapfs_file* fh = (struct viapfs_file*)data;
-  if (fh == NULL) return 0;
-  size_t to_copy = size * nmemb;
-  if (to_copy > fh->buf.len - fh->copied) {
-    to_copy = fh->buf.len - fh->copied;
-  }
-  DEBUG(2, "write_data: %zu\n", to_copy);
-  DEBUG(3, "%*s\n", (int)to_copy, (char*)ptr);
-  memcpy(ptr, fh->buf.p + fh->copied, to_copy);
-  fh->copied += to_copy;
-  return to_copy;
 }
 
 static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
@@ -225,38 +161,8 @@ static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
     }\
   }while(0)
 
-static int viapfs_getdir(const char* path, fuse_cache_dirh_t h,
-                        fuse_cache_dirfil_t filler) {
-  int err = 0;
-  CURLcode curl_res;
-
-  DEBUG(1, "viapfs_getdir: %s\n", path);
-  struct buffer buf;
-  buf_init(&buf);
-
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &buf);
-  curl_res = curl_easy_perform(viapfs.connection);
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (curl_res != 0) {
-    DEBUG(1, "%s\n", error_buf);
-    err = -EIO;
-  } else {
-    buf_null_terminate(&buf);
-    parse_dir((char*)buf.p, path + strlen(viapfs.host) - 1,
-              NULL, NULL, NULL, 0, h, filler); 
-  }
-
-  buf_free(&buf);
-  return op_return(err, "viapfs_getdir");
-}
-
 static int post(const char *postdata, const void *writedata) {
   pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSSIZE, strlen(postdata));
   curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, writedata);
@@ -271,486 +177,87 @@ static int post(const char *postdata, const void *writedata) {
   return curl_res;
 }
 
+static int viapfs_readdir(const char* path, void *rbuf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+{
+  DEBUG(1, "viapfs_readdir: %s\n", path);
+
+  struct buffer buf;
+  buf_init(&buf);
+
+  CURLcode curl_res = post(g_strdup_printf("readdir\n%s\n", path), &buf);
+
+  int err = 0;
+  if (curl_res) {
+    err = -EIO;
+  }
+  else {
+    buf_null_terminate(&buf);
+    for (char* entry = strtok(buf.p, "\n"); entry; entry = strtok(NULL, "\n"))
+      if (filler(rbuf, entry, NULL, 0))
+        break;
+  }
+
+  buf_free(&buf);
+
+  return op_return(err, "viapfs_readdir");
+}
+
+int parse_stat(const char* s, struct stat* sbuf) {
+
+  return 1;
+}
+
 static int viapfs_getattr(const char* path, struct stat* sbuf) {
   DEBUG(2, "viapfs_getattr: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
 
-  CURLcode curl_res = post(g_strdup_printf("stat\n%s\n", path), buf);
+  CURLcode curl_res = post(g_strdup_printf("stat\n%s\n", path), &buf);
 
-  int err = curl_res || !parse_stat((char*)buf.p, sbuf);
+  int err = 0;
+  if (curl_res) {
+    err = -ENOENT;
+  }
+  else {
+    unsigned long long int dev, rdev;
+    unsigned long int ino, nlink;
+    long int size, blksize, blocks, atime, mtime, ctime;
+    unsigned int mode, uid, gid;
+
+    if (sscanf((char*)buf.p, "%llu%lu%u%lu%u%u%llu%ld%ld%ld%ld%ld%ld", &dev, &ino, &mode, &nlink, &uid, &gid, &rdev, &size, &blksize, &blocks, &atime, &mtime, &ctime) != 13) {
+      err = -ENOENT;
+    }
+    else {
+      sbuf->st_dev = dev;
+      sbuf->st_ino = ino;
+      sbuf->st_mode = mode;
+      sbuf->st_nlink = nlink;
+      sbuf->st_uid = uid;
+      sbuf->st_gid = gid;
+      sbuf->st_rdev = rdev;
+      sbuf->st_size = size;
+      sbuf->st_blksize = blksize;
+      sbuf->st_blocks = blocks;
+      sbuf->st_atime = atime;
+      sbuf->st_mtime = mtime;
+      sbuf->st_ctime = ctime;
+    }
+  }
 
   buf_free(&buf);
-  if (err) return op_return(-ENOENT, "viapfs_getattr");
-  return 0;
-}
-
-
-static int check_running() {
-  int running_handles = 0;
-  curl_multi_perform(viapfs.multi, &running_handles);
-  return running_handles;
-}
-
-static size_t viapfs_read_chunk(const char* path, char* rbuf,
-                               size_t size, off_t offset,
-                               struct fuse_file_info* fi,
-                               int update_offset) {
-  int running_handles = 0;
-  int err = 0;
-  struct viapfs_file* fh = get_viapfs_file(fi);
-
-  DEBUG(2, "viapfs_read_chunk: %s %p %zu %lld %p %p\n",
-        path, rbuf, size, offset, fi, fh);
-
-  pthread_mutex_lock(&viapfs.lock);
-
-  DEBUG(2, "buffer size: %zu %lld\n", fh->buf.len, fh->buf.begin_offset);
-
-  if ((fh->buf.len < size + offset - fh->buf.begin_offset) ||
-      offset < fh->buf.begin_offset ||
-      offset > fh->buf.begin_offset + fh->buf.len) {
-    // We can't answer this from cache
-    if (viapfs.current_fh != fh ||
-        offset < fh->buf.begin_offset ||
-        offset > fh->buf.begin_offset + fh->buf.len ||
-        !check_running()) {
-      DEBUG(1, "We need to restart the connection %p\n", viapfs.connection);
-      DEBUG(2, "current_fh=%p fh=%p\n", viapfs.current_fh, fh);
-      DEBUG(2, "buf.begin_offset=%lld offset=%lld\n", fh->buf.begin_offset, offset);
-
-      buf_clear(&fh->buf);
-      fh->buf.begin_offset = offset;
-      viapfs.current_fh = fh;
-
-      cancel_previous_multi();
-      
-      curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, path);
-      curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &fh->buf);
-      if (offset) {
-        char range[15];
-        snprintf(range, 15, "%lld-", (long long) offset);
-        curl_easy_setopt_or_die(viapfs.connection, CURLOPT_RANGE, range);
-      }
-      
-      CURLMcode curlMCode =  curl_multi_add_handle(viapfs.multi, viapfs.connection);
-      if (curlMCode != CURLE_OK)
-      {
-          fprintf(stderr, "curl_multi_add_handle problem: %d\n", curlMCode);
-          exit(1);
-      }
-      viapfs.attached_to_multi = 1;
-    }
-
-    while(CURLM_CALL_MULTI_PERFORM ==
-        curl_multi_perform(viapfs.multi, &running_handles));
-
-    curl_easy_setopt_or_die(viapfs.connection, CURLOPT_RANGE, NULL);
-
-    while ((fh->buf.len < size + offset - fh->buf.begin_offset) &&
-        running_handles) {
-      struct timeval timeout;
-      int rc; /* select() return code */
-
-      fd_set fdread;
-      fd_set fdwrite;
-      fd_set fdexcep;
-      int maxfd;
-
-      FD_ZERO(&fdread);
-      FD_ZERO(&fdwrite);
-      FD_ZERO(&fdexcep);
-
-      /* set a suitable timeout to play around with */
-      timeout.tv_sec = 1;
-      timeout.tv_usec = 0;
-
-      /* get file descriptors from the transfers */
-      curl_multi_fdset(viapfs.multi, &fdread, &fdwrite, &fdexcep, &maxfd);
-
-      rc = select(maxfd+1, &fdread, &fdwrite, &fdexcep, &timeout);
-      if (rc == -1) {
-          err = 1;
-          break;
-      }
-      while(CURLM_CALL_MULTI_PERFORM ==
-            curl_multi_perform(viapfs.multi, &running_handles));
-    }
-
-    if (running_handles == 0) {
-      int msgs_left = 1;
-      while (msgs_left) {
-        CURLMsg* msg = curl_multi_info_read(viapfs.multi, &msgs_left);
-        if (msg == NULL ||
-            msg->msg != CURLMSG_DONE ||
-            msg->data.result != CURLE_OK) {
-          DEBUG(1, "error: curl_multi_info %d\n", msg->msg);
-          err = 1;
-        }
-      }
-    }
-  }
-
-  size_t to_copy = fh->buf.len + fh->buf.begin_offset - offset;
-  size = size > to_copy ? to_copy : size;
-  if (rbuf) {
-    memcpy(rbuf, fh->buf.p + offset - fh->buf.begin_offset, size);
-  }
-
-  if (update_offset) {
-    fh->last_offset = offset + size;
-  }
-
-  // Check if the buffer is growing and we can delete a part of it
-  if (fh->can_shrink && fh->buf.len > MAX_BUFFER_LEN) {
-    DEBUG(2, "Shrinking buffer from %zu to %zu bytes\n",
-          fh->buf.len, to_copy - size);
-    memmove(fh->buf.p,
-            fh->buf.p + offset - fh->buf.begin_offset + size,
-            to_copy - size);
-    fh->buf.len = to_copy - size;
-    fh->buf.begin_offset = offset + size;
-  }
-
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (err) return VIAPHPFS_BAD_READ;
-  return size;
-}
-
-static void set_common_curl_stuff(CURL* easy);
-
-static size_t write_data_bg(void *ptr, size_t size, size_t nmemb, void *data) {
-  struct viapfs_file *fh = data;
-  unsigned to_copy = size * nmemb;
-
-  if (!fh->isready) {
-    sem_post(&fh->ready);
-    fh->isready = 1;
-  }
-
-  if (fh->stream_buf.len == 0 && fh->written_flag) {
-    sem_post(&fh->data_written); /* viapfs_write can return */
-  }
-  
-  sem_wait(&fh->data_avail); 
-  
-  DEBUG(2, "write_data_bg: data_avail eof=%d\n", fh->eof);
-  
-  if (fh->eof)
-    return 0;
-
-  DEBUG(2, "write_data_bg: %d %zd\n", to_copy, fh->stream_buf.len);
-  if (to_copy > fh->stream_buf.len)
-    to_copy = fh->stream_buf.len;
-
-  memcpy(ptr, fh->stream_buf.p, to_copy);
-  if (fh->stream_buf.len > to_copy) {
-    size_t newlen = fh->stream_buf.len - to_copy;
-    memmove(fh->stream_buf.p, fh->stream_buf.p + to_copy, newlen);
-    fh->stream_buf.len = newlen;
-    sem_post(&fh->data_avail);
-    DEBUG(2, "write_data_bg: data_avail\n");    
-    
-  } else {
-    fh->stream_buf.len = 0;
-    fh->written_flag = 1;
-    sem_post(&fh->data_need);
-    DEBUG(2, "write_data_bg: data_need\n");
-  }
-
-  return to_copy;
-}
-
-int write_thread_ctr = 0;
-
-static void *viapfs_write_thread(void *data) {
-  struct viapfs_file *fh = data;
-  char range[15];
-  
-  DEBUG(2, "enter streaming write thread #%d path=%s pos=%lld\n", ++write_thread_ctr, fh->path, fh->pos);
-  
-  
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_URL, fh->path);
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_UPLOAD, 1);
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_INFILESIZE, -1);
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_READFUNCTION, write_data_bg);
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_READDATA, fh);
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_LOW_SPEED_LIMIT, 1);
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_LOW_SPEED_TIME, 60);
-  
-  fh->curl_error_buffer[0] = '\0';
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_ERRORBUFFER, fh->curl_error_buffer);
-
-  if (fh->pos > 0) {
-    /* resuming a streaming write */
-    //snprintf(range, 15, "%lld-", (long long) fh->pos);
-    //curl_easy_setopt_or_die(fh->write_conn, CURLOPT_RANGE, range);
-	  
-	curl_easy_setopt_or_die(fh->write_conn, CURLOPT_APPEND, 1);
-	  
-	//curl_easy_setopt_or_die(fh->write_conn, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)fh->pos);
-  }   
-  
-  CURLcode curl_res = curl_easy_perform(fh->write_conn);
-  
-  curl_easy_setopt_or_die(fh->write_conn, CURLOPT_UPLOAD, 0);
-
-  if (!fh->isready)
-    sem_post(&fh->ready);
-
-  if (curl_res != CURLE_OK)
-  {  
-	  DEBUG(1, "write problem: %d(%s) text=%s\n", curl_res, curl_easy_strerror(curl_res), fh->curl_error_buffer);
-	  fh->write_fail_cause = curl_res;
-	  /* problem - let viapfs_write continue to avoid hang */ 
-	  sem_post(&fh->data_need);
-  }
-  
-  DEBUG(2, "leaving streaming write thread #%d curl_res=%d\n", write_thread_ctr--, curl_res);
-  
-  sem_post(&fh->data_written); /* viapfs_write may return */
-
-  return NULL;
-}
-
-/* returns 1 on success, 0 on failure */
-static int start_write_thread(struct viapfs_file *fh)
-{
-	if (fh->write_conn != NULL)
-	{
-		fprintf(stderr, "assert fh->write_conn == NULL failed!\n");
-		exit(1);
-	}
-	
-	fh->written_flag=0;
-	fh->isready=0;
-	fh->eof=0;
-	sem_init(&fh->data_avail, 0, 0);
-	sem_init(&fh->data_need, 0, 0);
-	sem_init(&fh->data_written, 0, 0);
-	sem_init(&fh->ready, 0, 0);	
-	
-    fh->write_conn = curl_easy_init();
-    if (fh->write_conn == NULL) {
-      fprintf(stderr, "Error initializing libcurl\n");
-      return 0;
-    } else {
-      int err;
-      set_common_curl_stuff(fh->write_conn);
-      err = pthread_create(&fh->thread_id, NULL, viapfs_write_thread, fh);
-      if (err) {
-        fprintf(stderr, "failed to create thread: %s\n", strerror(err));
-        /* FIXME: destroy curl_easy */
-        return 0;	
-      }
-    }
-	return 1;
-}
-
-static int finish_write_thread(struct viapfs_file *fh)
-{
-    if (fh->write_fail_cause == CURLE_OK)
-    {
-      sem_wait(&fh->data_need);  /* only wait when there has been no error */
-    }
-    sem_post(&fh->data_avail);
-    fh->eof = 1;
-    
-    pthread_join(fh->thread_id, NULL);
-    DEBUG(2, "finish_write_thread after pthread_join. write_fail_cause=%d\n", fh->write_fail_cause);
-
-    curl_easy_cleanup(fh->write_conn);    
-    fh->write_conn = NULL;
-    
-    sem_destroy(&fh->data_avail);
-    sem_destroy(&fh->data_need);
-    sem_destroy(&fh->data_written);
-    sem_destroy(&fh->ready);    
-    
-    if (fh->write_fail_cause != CURLE_OK)
-    {
-      return -EIO;
-    }	
-    return 0;
-}
-
-
-static void free_viapfs_file(struct viapfs_file *fh) {
-  if (fh->write_conn)
-    curl_easy_cleanup(fh->write_conn);
-  g_free(fh->path);
-  sem_destroy(&fh->data_avail);
-  sem_destroy(&fh->data_need);
-  sem_destroy(&fh->data_written);
-  sem_destroy(&fh->ready);
-  free(fh);
-}
-
-static int buffer_file(struct viapfs_file *fh) {
-  // If we want to write to the file, we have to load it all at once,
-  // modify it in memory and then upload it as a whole as most FTP servers
-  // don't support resume for uploads.
-  pthread_mutex_lock(&viapfs.lock);
-  cancel_previous_multi();
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_URL, fh->path);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, &fh->buf);
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  pthread_mutex_unlock(&viapfs.lock);
-
-  if (curl_res != 0) {
-    return -EACCES;
-  }
-
-  return 0;
-}
-
-static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev);
-static int viapfs_chmod(const char* path, mode_t mode);
-
-static char * flags_to_string(int flags)
-{
-	char * access_mode_str = NULL;
-	if ((flags & O_ACCMODE) == O_WRONLY)
-		access_mode_str = "O_WRONLY";
-	else if ((flags & O_ACCMODE) == O_RDWR) 
-		access_mode_str = "O_RDWR";
-	else if ((flags & O_ACCMODE) == O_RDONLY)
-		access_mode_str = "O_RDONLY";
-	
-	return g_strdup_printf("access_mode=%s, flags=%s%s%s%s",
-			access_mode_str,
-			(flags & O_CREAT) ? "O_CREAT " : "",
-			(flags & O_TRUNC) ? "O_TRUNC " : "",
-			(flags & O_EXCL) ? "O_EXCL " : "",
-			(flags & O_APPEND) ? "O_APPEND " : "");
-	
-}
-
-static int test_exists(const char* path)
-{
-	struct stat sbuf;
-	return viapfs_getattr(path, &sbuf);
-}
-
-static __off_t test_size(const char* path)
-{
-	struct stat sbuf;
-	int err = viapfs_getattr(path, &sbuf);
-	if (err)
-		return err;
-	return sbuf.st_size;
+  return op_return(err, "viapfs_getattr");
 }
 
 static int viapfs_open_common(const char* path, mode_t mode,
-                             struct fuse_file_info* fi) {
-	
-  char * flagsAsStr = flags_to_string(fi->flags);
-  DEBUG(2, "viapfs_open_common: %s\n", flagsAsStr);
-  int err = 0;
-
-  struct viapfs_file* fh =
-    (struct viapfs_file*) malloc(sizeof(struct viapfs_file));
-
-  memset(fh, 0, sizeof(*fh));
-  buf_init(&fh->buf);
-  fh->mode = mode;
-  fh->dirty = 0;
-  fh->copied = 0;
-  fh->last_offset = 0;
-  fh->can_shrink = 0;
-  buf_init(&fh->stream_buf);
-  /* sem_init(&fh->data_avail, 0, 0);
-  sem_init(&fh->data_need, 0, 0);
-  sem_init(&fh->data_written, 0, 0);
-  sem_init(&fh->ready, 0, 0); */
-  fh->path = strdup(path);
-  fh->written_flag = 0;
-  fh->write_fail_cause = CURLE_OK;
-  fh->curl_error_buffer[0] = '\0';
-  fh->write_may_start = 0;
-  fi->fh = (unsigned long) fh;
-
-  if ((fi->flags & O_ACCMODE) == O_RDONLY) {
-    if (fi->flags & O_CREAT) {
-      err = viapfs_mknod(path, (mode & 07777) | S_IFREG, 0);
-    } else {
-      // If it's read-only, we can load the file a bit at a time, as necessary.
-      DEBUG(1, "opening %s O_RDONLY\n", path);
-      fh->can_shrink = 1;
-      size_t size = viapfs_read_chunk(fh->path, NULL, 1, 0, fi, 0);
-
-      if (size == VIAPHPFS_BAD_READ) {
-        DEBUG(1, "initial read failed size=%d\n", size);
-        err = -EACCES;
-      }
-    }
-  }
-
-  else if ((fi->flags & O_ACCMODE) == O_RDWR || (fi->flags & O_ACCMODE) == O_WRONLY)
-  {
-#ifndef VIAPHPFS_O_RW_WORKAROUND
-	  if ((fi->flags & O_ACCMODE) == O_RDWR)
-	  {
-		  err = -ENOTSUP;
-		  goto fin;
-	  }
-#endif
-	  
-	  
-	  if ((fi->flags & O_APPEND))
-	  {
-		DEBUG(1, "opening %s with O_APPEND - not supported!\n", path);
-		err = -ENOTSUP;
-	  }
-	  
-	  if ((fi->flags & O_EXCL))
-	  {
-		DEBUG(1, "opening %s with O_EXCL - testing existence\n", path);
-		int exists_r = test_exists(path);
-		if (exists_r != -ENOENT)
-			err = -EACCES;
-	  }
-	  
-	  if (!err)
-	  {
-		  if ((fi->flags & O_CREAT) || (fi->flags & O_TRUNC))
-	      {
-	        DEBUG(1, "opening %s for writing with O_CREAT or O_TRUNC. write thread will start now\n", path);
-	    	  
-	    	  
-	    	fh->write_may_start=1;
-	    	  
-	        if (start_write_thread(fh))
-	        {
-	          sem_wait(&fh->ready);
-	          /* chmod makes only sense on O_CREAT */ 
-	          if (fi->flags & O_CREAT) viapfs_chmod(path, mode);  
-	          sem_post(&fh->data_need);
-	        }
-	        else
-	        {
-	          err = -EIO;
-	        }
-	      }
-	      else
-	      {
-	    	/* in this case we have to start writing later */
-	        DEBUG(1, "opening %s for writing without O_CREAT or O_TRUNC. write thread will start after ftruncate\n", path);
-	        /* expecting ftruncate */
-	        fh->write_may_start=0;
-	      }
-	  }
-      
-  } else {
-      err = -EIO;
-  }
-
-  fin:
-  if (err)
-    free_viapfs_file(fh);
-
+                              struct fuse_file_info* fi) {
+  char* flagsAsStr = flags_to_string(fi->flags);
+  DEBUG(2, "viapfs_open_common: %s mode=%u flags=%s\n", path, mode, flagsAsStr);
   g_free(flagsAsStr);
+  // TODO: handle append correctly
+  CURLcode curl_res = post(g_strdup_printf("open\n%s\n%u\n%d\n", path, mode, fi->flags), NULL);
+
+  int err = curl_res ? -EIO : 0;  
+
   return op_return(err, "viapfs_open");
 }
 
@@ -767,31 +274,29 @@ static int viapfs_create(const char* path, mode_t mode,
 
 static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
                       struct fuse_file_info* fi) {
-  int ret;
-  struct viapfs_file *fh = get_viapfs_file(fi);
-  
-  DEBUG(1, "viapfs_read: %s size=%zu offset=%lld has_write_conn=%d pos=%lld\n", path, size, (long long) offset, fh->write_conn!=0, fh->pos);
-  
-  if (fh->pos>0 || fh->write_conn!=NULL)
-  {
-	  fprintf(stderr, "in read/write mode we cannot read from a file that has already been written to\n");
-	  return op_return(-EIO, "viapfs_read");
+  DEBUG(1, "viapfs_read: %s size=%zu offset=%ld\n", path, size, offset);
+
+  struct buffer buf;
+  buf_init(&buf);
+
+  CURLcode curl_res = post(g_strdup_printf("read\n%s\n%u\n%ld\n", path, size, offset), &buf);
+
+  int ret = 0;
+  if (curl_res) {
+    err = -EIO;
   }
-  
-  size_t size_read = viapfs_read_chunk(path, rbuf, size, offset, fi, 1);
-  if (size_read == VIAPHPFS_BAD_READ) {
-    ret = -EIO;
-  } else {
-    ret = size_read;
+  else {
+    ret = size;
+    ret <?= buf.len;
+    memcpy(rbuf, buf.p, ret);
   }
-  
-  if (ret<0) op_return(ret, "viapfs_read");
+  buf_free(&buf);
+
+  if (ret < 0) op_return(ret, "viapfs_read");
   return ret;
 }
 
 static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev) {
-  (void) rdev;
-
   DEBUG(1, "viapfs_mknode: mode=%u\n", mode);
 
   CURLcode curl_res = post(g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, rdev), NULL);
@@ -827,33 +332,6 @@ static int viapfs_truncate(const char* path, off_t offset) {
   return op_return(err, "viapfs_truncate");
 }
 
-static int viapfs_ftruncate(const char * path , off_t offset, struct fuse_file_info * fi)
-{
-  DEBUG(1, "viapfs_ftruncate: %s len=%lld\n", path, offset);
-  struct viapfs_file *fh = get_viapfs_file(fi);
-
-  if (offset == 0) 
-  {
-	 if (fh->pos == 0)
-	 {
-		 fh->write_may_start=1;
-		 return op_return(create_empty_file(fh->path), "viapfs_ftruncate");
-	 }
-	 return op_return(-EPERM, "viapfs_ftruncate");
-  }
-  /* fix openoffice problem, truncating exactly to file length */
-  
-  __off_t size = test_size(path); 
-  DEBUG(1, "viapfs_ftruncate: %s check filesize=%lld\n", path, (long long int)size);
-  
-  if (offset == size)  
-	  return op_return(0, "viapfs_ftruncate");
-  
-  DEBUG(1, "viapfs_ftruncate problem: %s offset != 0 or filesize(=%lld) != offset(=%lld)\n", path, (long long int)size, (long long int) offset);
-  
-  return op_return(-EPERM, "viapfs_ftruncate");
-}
-
 static int viapfs_utime(const char* path, struct utimbuf* time) {
   char *postdata = time ? g_strdup_printf("utime\n%s\n%ld\n%ld\n", path, time.actime, time.modtime) : g_strdup_printf("utimenow\n%s\n", path);
   CURLcode curl_res = post(postdata, NULL);
@@ -885,151 +363,19 @@ static int viapfs_unlink(const char* path) {
 
 static int viapfs_write(const char *path, const char *wbuf, size_t size,
                        off_t offset, struct fuse_file_info *fi) {
-  (void) path;
-  struct viapfs_file *fh = get_viapfs_file(fi);
-
-  DEBUG(1, "viapfs_write: %s size=%zu offset=%lld has_write_conn=%d pos=%lld\n", path, size, (long long) offset, fh->write_conn!=0, fh->pos);
-
-  if (fh->write_fail_cause != CURLE_OK)
-  {
-    DEBUG(1, "previous write failed. cause=%d\n", fh->write_fail_cause);
-    return -EIO;
-  }    
+  gchar* wbufb64 = g_base64_encode(wbuf, size);
   
-  if (!fh->write_conn && fh->pos == 0 && offset == 0)
-  {
-    DEBUG(1, "viapfs_write: starting a streaming write at pos=%lld\n", fh->pos);
-    
-    /* check if the file has been truncated to zero or has been newly created */
-    if (!fh->write_may_start)
-    {
-    	long long size = (long long int)test_size(path); 
-    	if (size != 0)
-    	{
-    		fprintf(stderr, "viapfs_write: start writing with no previous truncate not allowed! size check rval=%lld\n", size);
-    		return op_return(-EIO, "viapfs_write");
-    	}
-    }
-    
-	int success = start_write_thread(fh);
-    if (!success)
-    {
-      return op_return(-EIO, "viapfs_write");
-    }
-    sem_wait(&fh->ready);
-	sem_post(&fh->data_need);    
-  }
-  
-  if (!fh->write_conn && fh->pos >0 && offset == fh->pos)
-  {
-    /* resume a streaming write */
-    DEBUG(1, "viapfs_write: resuming a streaming write at pos=%lld\n", fh->pos);
-	  
-    int success = start_write_thread(fh);
-    if (!success)
-    {
-      return op_return(-EIO, "viapfs_write");
-    }
-    sem_wait(&fh->ready);
-    sem_post(&fh->data_need);    
-  }
-  
-  if (fh->write_conn) {
-    sem_wait(&fh->data_need);
-    
-    if (offset != fh->pos) {
-      DEBUG(1, "non-sequential write detected -> fail\n");
+  CURLcode curl_res = post(g_strdup_printf("write\n%s\n%ld\n%u\n%s\n", path, offset, size, wbufb64), NULL);
 
-      sem_post(&fh->data_avail);      
-      finish_write_thread(fh);      
-      return op_return(-EIO, "viapfs_write");
-      
-      
-    } else {
-      if (buf_add_mem(&fh->stream_buf, wbuf, size) == -1) {
-        sem_post(&fh->data_need);
-        return op_return(-ENOMEM, "viapfs_write");
-      }
-      fh->pos += size;
-      /* wake up write_data_bg */
-      sem_post(&fh->data_avail);
-      /* wait until libcurl has completely written the current chunk or finished/failed */
-      sem_wait(&fh->data_written);  
-      fh->written_flag = 0;
-      
-      if (fh->write_fail_cause != CURLE_OK)
-      {
-    	/* TODO: on error we should problably unlink the target file  */ 
-        DEBUG(1, "writing failed. cause=%d\n", fh->write_fail_cause);
-        return op_return(-EIO, "viapfs_write");
-      }    
-    }
-    
-  }
+  g_free(wbufb64);
 
-  return size;
-
-}
-
-static int viapfs_flush(const char *path, struct fuse_file_info *fi) {
-  int err = 0;
-  struct viapfs_file* fh = get_viapfs_file(fi);
-
-  DEBUG(1, "viapfs_flush: buf.len=%zu buf.pos=%lld write_conn=%d\n", fh->buf.len, fh->pos, fh->write_conn!=0);
-  
-  if (fh->write_conn) {
-    err = finish_write_thread(fh);
-    if (err) return op_return(err, "viapfs_flush");
-    
-    struct stat sbuf;
-    
-    /* check if the resulting file has the correct size
-     this is important, because we use APPE for continuing
-     writing after a premature flush */
-    err = viapfs_getattr(path, &sbuf);   
-    if (err) return op_return(err, "viapfs_flush");
-    
-    if (sbuf.st_size != fh->pos)
-    {
-    	fh->write_fail_cause = -999;
-    	fprintf(stderr, "viapfs_flush: check filesize problem: size=%lld expected=%lld\n", sbuf.st_size, fh->pos);
-    	return op_return(-EIO, "viapfs_flush");
-    }
-    
-    return 0;
-  }
-  
- 
-  if (!fh->dirty) return 0;
-
-  return op_return(-EIO, "viapfs_flush");
-  
-}
-
-static int viapfs_fsync(const char *path, int isdatasync,
-                      struct fuse_file_info *fi) {
-	DEBUG(1, "viapfs_fsync %s\n", path);
-  (void) isdatasync;
-  return viapfs_flush(path, fi);
+  int err = curl_res ? -EIO : 0;
+  return op_return(err, "viapfs_write");
 }
 
 static int viapfs_release(const char* path, struct fuse_file_info* fi) {
-
   DEBUG(1, "viapfs_release %s\n", path);
-  struct viapfs_file* fh = get_viapfs_file(fi);
-  viapfs_flush(path, fi);
-  pthread_mutex_lock(&viapfs.lock);
-  if (viapfs.current_fh == fh) {
-    viapfs.current_fh = NULL;
-  }
-  pthread_mutex_unlock(&viapfs.lock);
 
-  /*
-  if (fh->write_conn) {
-	  finish_write_thread(fh);
-  }
-  */
-  free_viapfs_file(fh);
   return op_return(0, "viapfs_release"); 
 }
 
@@ -1043,12 +389,23 @@ static int viapfs_rename(const char* from, const char* to) {
   return op_return(err, "viapfs_rename");
 }
 
+static int viapfs_symlink(const char* target, const char* link) {
+  DEBUG(1, "viapfs_symlink from %s to %s\n", link, target);
+
+  // todo: transform_symlink with symlink_prefix
+
+  CURLcode curl_res = post(g_strdup_printf("symlink\n%s\n", target, link), NULL);
+
+  int err = curl_res ? -EPERM : 0;
+  return op_return(err, "viapfs_symlink");
+}
+
 static int viapfs_readlink(const char *path, char *linkbuf, size_t size) {
   DEBUG(2, "readlink: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
 
-  CURLcode curl_res = post(g_strdup_printf("readlink\n%s\n", path), buf);
+  CURLcode curl_res = post(g_strdup_printf("readlink\n%s\n", path), &buf);
 
   int err = curl_res || buf.len > (size+1);
 
@@ -1094,12 +451,12 @@ static int viapfs_statfs(const char *path, struct statfs *buf)
 #endif
 
 static struct fuse_operations viapfs_oper = {
-//    .init       = viapfs_init,
+    .readdir    = viapfs_readdir,
     .getattr    = viapfs_getattr,
     .readlink   = viapfs_readlink,
     .mknod      = viapfs_mknod,
     .mkdir      = viapfs_mkdir,
-//    .symlink    = viapfs_symlink,
+    .symlink    = viapfs_symlink,
     .unlink     = viapfs_unlink,
     .rmdir      = viapfs_rmdir,
     .rename     = viapfs_rename,
@@ -1108,16 +465,12 @@ static struct fuse_operations viapfs_oper = {
     .truncate   = viapfs_truncate,
     .utime      = viapfs_utime,
     .open       = viapfs_open,
-    .flush      = viapfs_flush,
-    .fsync      = viapfs_fsync,
     .release    = viapfs_release,
     .read       = viapfs_read,
     .write      = viapfs_write,
     .statfs     = viapfs_statfs,
 #if FUSE_VERSION >= 25
     .create     = viapfs_create,
-    .ftruncate  = viapfs_ftruncate,
-//    .fgetattr   = viapfs_fgetattr,
 #endif
 };
 
@@ -1180,13 +533,11 @@ static void usage(const char* progname) {
 "    -V   --version         print version\n"
 "\n"
 "HTTP options:\n"
-"    viapfs_debug         print some debugging information\n"
+"    viapfs_debug        print some debugging information\n"
 "    transform_symlinks  prepend mountpoint to absolute symlink targets\n"
-"    custom_list=STR     Command used to list files. Defaults to \"LIST -a\"\n"
 "    tcp_nodelay         use the TCP_NODELAY option\n"
 "    connect_timeout=N   maximum time allowed for connection in seconds\n"
 "    interface=STR       specify network interface/address to use\n"
-"    krb4=STR            enable krb4 with specified security level\n"
 "    proxy=STR           use host:port HTTP proxy\n"
 "    proxytunnel         operate through a HTTP proxy tunnel (using CONNECT)\n"
 "    proxy_anyauth       pick \"any\" proxy authentication method\n"
@@ -1207,16 +558,11 @@ static void usage(const char* progname) {
 
 static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_WRITEFUNCTION, read_data);
-  curl_easy_setopt_or_die(easy, CURLOPT_READFUNCTION, write_data);
   curl_easy_setopt_or_die(easy, CURLOPT_ERRORBUFFER, error_buf);
   curl_easy_setopt_or_die(easy, CURLOPT_URL, viapfs.host);
   curl_easy_setopt_or_die(easy, CURLOPT_POST, 1);
   curl_easy_setopt_or_die(easy, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
   curl_easy_setopt_or_die(easy, CURLOPT_NOSIGNAL, 1);
-
-  if (viapfs.custom_list) {
-    curl_easy_setopt_or_die(easy, CURLOPT_CUSTOMREQUEST, viapfs.custom_list);
-  }
 
   if (viapfs.verbose) {
     curl_easy_setopt_or_die(easy, CURLOPT_VERBOSE, TRUE);
@@ -1230,7 +576,6 @@ static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_CONNECTTIMEOUT, viapfs.connect_timeout);
 
   curl_easy_setopt_or_die(easy, CURLOPT_INTERFACE, viapfs.interface);
-  curl_easy_setopt_or_die(easy, CURLOPT_KRB4LEVEL, viapfs.krb4);
   
   if (viapfs.proxy) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXY, viapfs.proxy);
@@ -1257,7 +602,7 @@ static void set_common_curl_stuff(CURL* easy) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXYAUTH, CURLAUTH_BASIC);
   }
 
-  // MB: maybe use CURLOPT_HTTPAUTH
+  //  curl_easy_setopt_or_die(easy, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
   curl_easy_setopt_or_die(easy, CURLOPT_USERPWD, viapfs.user);
   curl_easy_setopt_or_die(easy, CURLOPT_PROXYUSERPWD, viapfs.proxy_user);
   curl_easy_setopt_or_die(easy, CURLOPT_IPRESOLVE, viapfs.ip_version);
@@ -1335,8 +680,6 @@ int main(int argc, char** argv) {
   // Set some default values
   viapfs.curl_version = curl_version_info(CURLVERSION_NOW);
   viapfs.blksize = 4096;
-  viapfs.multiconn = 1;
-  viapfs.attached_to_multi = 0;
   
   if (fuse_opt_parse(&args, &viapfs, viapfs_opts, viapfs_opt_proc) == -1)
     exit(1);
@@ -1389,12 +732,6 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
-  viapfs.multi = curl_multi_init();
-  if (viapfs.multi == NULL) {
-    fprintf(stderr, "Error initializing libcurl multi\n");
-    exit(1);
-  }
-
   viapfs.connection = easy;
   pthread_mutex_init(&viapfs.lock, NULL);
 
@@ -1405,8 +742,6 @@ int main(int argc, char** argv) {
 
   res = viaphpfs_fuse_main(&args);
 
-  cancel_previous_multi();
-  curl_multi_cleanup(viapfs.multi);
   curl_easy_cleanup(easy);
   curl_global_cleanup();
   fuse_opt_free_args(&args);

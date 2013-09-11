@@ -24,19 +24,13 @@ struct viapfs {
   char* mountpoint;
   pthread_mutex_t lock;
   CURL* connection;
-  CURLM* multi;
-  int attached_to_multi;
-  struct viapfs_file* current_fh;
   unsigned blksize;
   int verbose;
   int debug;
   int transform_symlinks;
-  char* custom_list;
   int tcp_nodelay;
-  char* http_port;
   int connect_timeout;
   char* interface;
-  char* krb4;
   char* proxy;
   int proxytunnel;
   int proxyanyauth;
@@ -52,7 +46,6 @@ struct viapfs {
   curl_version_info_data* curl_version;
   char *codepage;
   char *iocharset;
-  int multiconn;
 };
 
 extern struct viapfs viapfs;
