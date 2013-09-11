@@ -2,6 +2,8 @@
 
 define('VIAPHPFS_ROOT', getcwd()); // without last slash
 define('VIAPHPFS_READONLY', false);
+define('VIAPHPFS_LOG', true);
+define('VIAPHPFS_LOGFILE', 'log.log');
 define('O_ACCMODE', 3);
 define('O_RDONLY', 0);
 define('O_WRONLY', 1);
@@ -11,15 +13,34 @@ define('O_EXCL', 0200);
 define('O_TRUNC', 01000);
 define('O_APPEND', 02000);
 
+if (VIAPHPFS_LOG) {
+  $viaphpfs_logh = fopen(VIAPHPFS_LOGFILE, 'a') or die;
+}
+else {
+  $viaphpfs_logh = FALSE;
+}
+
+function viaphpfs_log($msg) {
+  global $viaphpfs_logh;
+  if (VIAPHPFS_LOG)
+    fwrite($viaphpfs_logh, $msg);
+}
+
 function die_error($msg) {
+  viaphpfs_log('Error: ' . $msg . "\n");
   die; // TODO
 }
 function die_success($echo = '') {
-  die $echo;
+  viaphpfs_log('Success: ' . $echo . "\n");
+  die($echo);
 }
 function die_with($b, $msg) {
   if ($b) die_error($msg);
   else die_success();
+}
+function die_blksize() {
+  $s = @stat('.');
+  die_success($s['blksize'] . "\n");
 }
 
 ini_set('open_basedir', VIAPHPFS_ROOT);
@@ -28,7 +49,7 @@ if (@chroot(VIAPHPFS_ROOT)) {
   define('VIAPHPFS_PREFIX', '');
 }
 else {
-  $trailing_slash = substring(VIAPHPFS_ROOT, -1, 1) == '/' ? '' : '/';
+  $trailing_slash = substr(VIAPHPFS_ROOT, -1, 1) == '/' ? '' : '/';
   define('VIAPHPFS_PREFIX', VIAPHPFS_ROOT.$trailing_slash);
 }
 
@@ -39,9 +60,11 @@ function mk_f($f) {
 }
 
 
-$postdata = file('php://input');
+$postdata = file('php://input', FILE_IGNORE_NEW_LINES);
 
-isset($postdata[0]) or die_success();
+viaphpfs_log('Got: ' . implode("\t", $postdata) . "\n");
+
+isset($postdata[0]) or die_blksize();
 isset($postdata[1]) or die_error('No file specified');
 
 $action = $postdata[0];
@@ -51,7 +74,8 @@ switch ($action)
 {
   case 'stat':
     $stat = @lstat($f) or die_error('Cannot stat');
-    die_success(implode("\n", $stat)."\n");
+    $mystat = array($stat['ino'], $stat['mode'], $stat['nlink'], $stat['uid'], $stat['gid'], $stat['rdev'], $stat['size'], $stat['blocks'], $stat['atime'], $stat['mtime'], $stat['ctime']);
+    die_success(implode("\n", $mystat)."\n");
   case 'readlink':
     $c = readlink($f) or die_error('Cannot readlink');
     die_success($c);
@@ -156,6 +180,6 @@ switch ($action)
     die_with(fclose($h), 'Cannot fclose');
 }
 
-die_error('Unknown operation');
+die_error('Unknown operation "' . $action . '"');
 
 ?>

@@ -131,6 +131,7 @@ static int op_return(int err, char * operation)
 		DEBUG(2, "%s successful\n", operation);
 		return 0;
 	}
+        DEBUG(2, "%s failed because %s\n", operation, strerror(-err));
 	fprintf(stderr, "viapfs: operation %s failed because %s\n", operation, strerror(-err));
 	return err;
 }
@@ -210,16 +211,18 @@ static int viapfs_getattr(const char* path, struct stat* sbuf) {
     err = -ENOENT;
   }
   else {
-    unsigned long long int dev, rdev;
+    unsigned long long int rdev;
     unsigned long int ino, nlink;
-    long int size, blksize, blocks, atime, mtime, ctime;
+    long int size, blocks, atime, mtime, ctime;
     unsigned int mode, uid, gid;
 
-    if (sscanf(buf.p, "%llu%lu%u%lu%u%u%llu%ld%ld%ld%ld%ld%ld", &dev, &ino, &mode, &nlink, &uid, &gid, &rdev, &size, &blksize, &blocks, &atime, &mtime, &ctime) != 13) {
+    buf_null_terminate(&buf);
+
+    if (sscanf(buf.p, "%lu%u%lu%u%u%llu%ld%ld%ld%ld%ld", &ino, &mode, &nlink, &uid, &gid, &rdev, &size, &blocks, &atime, &mtime, &ctime) != 11) {
       err = -ENOENT;
     }
     else {
-      sbuf->st_dev = dev;
+      memset(sbuf, 0, sizeof(struct stat));
       sbuf->st_ino = ino;
       sbuf->st_mode = mode;
       sbuf->st_nlink = nlink;
@@ -227,7 +230,6 @@ static int viapfs_getattr(const char* path, struct stat* sbuf) {
       sbuf->st_gid = gid;
       sbuf->st_rdev = rdev;
       sbuf->st_size = size;
-      sbuf->st_blksize = blksize;
       sbuf->st_blocks = blocks;
       sbuf->st_atime = atime;
       sbuf->st_mtime = mtime;
@@ -712,12 +714,23 @@ int main(int argc, char** argv) {
   }
 
   set_common_curl_stuff(easy);
-  curl_easy_setopt_or_die(easy, CURLOPT_WRITEDATA, NULL);
+  
+  struct buffer buf;
+  buf_init(&buf);
+  curl_easy_setopt_or_die(easy, CURLOPT_POSTFIELDSIZE, 0);
+  curl_easy_setopt_or_die(easy, CURLOPT_WRITEDATA, &buf);
   curl_res = curl_easy_perform(easy);
   if (curl_res != 0) {
     fprintf(stderr, "Error connecting to http: %s\n", error_buf);
     exit(1);
   }
+
+  blksize_t blksize = -1;
+  if (sscanf(buf.p, "%ld", &blksize) != 1 || blksize <= 0) {
+    fprintf(stderr, "Wrong blocksize (%ld), maybe the host is not a right viaphpfs server\n", blksize);
+    exit(1);
+  }
+  viapfs.blksize = blksize;
 
   viapfs.connection = easy;
   pthread_mutex_init(&viapfs.lock, NULL);

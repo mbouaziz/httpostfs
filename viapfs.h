@@ -24,7 +24,7 @@ struct viapfs {
   char* mountpoint;
   pthread_mutex_t lock;
   CURL* connection;
-  unsigned blksize;
+  blksize_t blksize;
   int verbose;
   int debug;
   int transform_symlinks;
