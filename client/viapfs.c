@@ -1,7 +1,7 @@
 /*
     VIAPHP file system
     Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
-    2013 Mehdi Bouaziz <mehdi@bouaziz.me>
+    Copyright (C) 2013 Mehdi Bouaziz <mehdi@bouaziz.org>
 
     This program can be distributed under the terms of the GNU GPL.
     See the file COPYING.
