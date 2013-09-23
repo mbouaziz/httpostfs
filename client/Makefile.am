@@ -8,16 +8,15 @@ LIBICONV = @LIBICONV@
 AM_CPPFLAGS = -DFUSE_USE_VERSION=26
 AM_LDFLAGS = $(LIBICONV)
 
-bin_PROGRAMS = viaphpfs
+bin_PROGRAMS = httpostfs
 
-viaphpfs_SOURCES = viapfs.c
+httpostfs_SOURCES = httpostfs.c
 if FUSE_OPT_COMPAT
-viaphpfs_LDADD = libviaphpfs.a compat/libcompat.la
+httpostfs_LDADD = libhttpostfs.a compat/libcompat.la
 else
-viaphpfs_LDADD = libviaphpfs.a
+httpostfs_LDADD = libhttpostfs.a
 endif
 
-noinst_LIBRARIES = libviaphpfs.a
+noinst_LIBRARIES = libhttpostfs.a
 
-libviaphpfs_a_SOURCES =	 charset_utils.c charset_utils.h \
-			 viapfs.h
+libhttpostfs_a_SOURCES = charset_utils.c charset_utils.h httpostfs.h

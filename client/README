@@ -1,8 +1,12 @@
-ViaPhpFS
+HttpostFS
 =========
 
-ViaPhpFS is a filesystem for accessing viaphpfs hosts based on FUSE and
-libcurl. It automatically reconnects if the server times out. 
+HttpostFS is a filesystem for accessing httpostfs hosts based on FUSE and
+libcurl.
+
+My motivation to start this project was to maintain my website using
+rsync. I was using curlftpfs until I had to sync symlinks, which cannot
+be created with FTP.
 
 Requirements
 ============
@@ -14,31 +18,38 @@ libcurl >= 7.17.0
 Compilation and Installation
 ============================
 
-./configure
-make
-make install
+1. (Once) Generate autotools files :
+  a. Run autoheader (to generate config.h.in)
+  b. Run aclocal (to generate aclocal.m4)
+  c. Run libtoolize (to generate ltmain.sh)
+  c. Run automake --add-missing (to generate Makefile.in, config.guess,
+     config.sub, depcomp, install-sh and missing)
+  d. Run autoconf (to generate configure)
+
+2. (Once) Configure : run ./configure (to generate Makefile and config.h)
+
+3. Compile / recompile : make
+
+4. Install : make install
 
 Usage
 =====
 
-viaphpfs <viaphpsite> <mountpoint>
+httpostfs <httpostfssite> <mountpoint>
 
 ex.:
-viaphpfs http://fs.example.com/index.php sunet/
+httpostfs http://fs.example.com/fs.php sunet/
 
+where fs.php is e.g. like ../server-php/fs.php5
 
 Debugging
 =========
 
-viaphpfs -f -v -o debug,httpfs_debug=3 <viaphpsite> <mountpoint> 
+httpostfs -f -v -o debug,httpostfs_debug=3 <httpostfssite> <mountpoint> 
 
-(runs the viaphpfs in foreground and shows libcurl verbose debug output)  
+(runs the httpostfs in foreground and shows libcurl verbose debug output)  
 
 
 Known Problems
 ==============
 
-1) There seems to be a bug in libcurl 7.18 which sometimes causes problems reading files. 
-Should be fixed in libcurl >= 7.18.2
-
-http://sourceforge.net/tracker/index.php?func=detail&aid=1951588&group_id=976&atid=100976

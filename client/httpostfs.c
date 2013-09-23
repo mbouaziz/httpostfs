@@ -1,5 +1,5 @@
 /*
-    VIAPHP file system
+    Httpost file system
     Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
     Copyright (C) 2013 Mehdi Bouaziz <mehdi@bouaziz.org>
 
@@ -25,9 +25,9 @@
 #include <assert.h>
 
 #include "charset_utils.h"
-#include "viapfs.h"
+#include "httpostfs.h"
 
-struct viapfs viapfs;
+struct httpostfs httpostfs;
 static char error_buf[CURL_ERROR_SIZE];
 
 static void usage(const char* progname);
@@ -57,7 +57,7 @@ static int buf_resize(struct buffer *buf, size_t len)
     buf->size = (buf->len + len + 63) & ~31;
     buf->p = realloc(buf->p, buf->size);
     if (!buf->p) {
-        fprintf(stderr, "viapfs: memory allocation failed\n");
+        fprintf(stderr, "httpostfs: memory allocation failed\n");
         return -1;
     }
     return 0;
@@ -85,29 +85,29 @@ enum {
   KEY_VERSION,
 };
 
-#define VIAPFS_OPT(t, p, v) { t, offsetof(struct viapfs, p), v }
+#define HTTPOSTFS_OPT(t, p, v) { t, offsetof(struct httpostfs, p), v }
 
-static struct fuse_opt viapfs_opts[] = {
-  VIAPFS_OPT("viapfs_debug=%u",    debug, 0),
-  VIAPFS_OPT("transform_symlinks", transform_symlinks, 1),
-  VIAPFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
-  VIAPFS_OPT("connect_timeout=%u", connect_timeout, 0),
-  VIAPFS_OPT("interface=%s",       interface, 0),
-  VIAPFS_OPT("proxy=%s",           proxy, 0),
-  VIAPFS_OPT("proxytunnel",        proxytunnel, 1),
-  VIAPFS_OPT("proxy_anyauth",      proxyanyauth, 1),
-  VIAPFS_OPT("proxy_basic",        proxybasic, 1),
-  VIAPFS_OPT("proxy_digest",       proxydigest, 1),
-  VIAPFS_OPT("proxy_ntlm",         proxyntlm, 1),
-  VIAPFS_OPT("httpproxy",          proxytype, CURLPROXY_HTTP),
-  VIAPFS_OPT("socks4",             proxytype, CURLPROXY_SOCKS4),
-  VIAPFS_OPT("socks5",             proxytype, CURLPROXY_SOCKS5),
-  VIAPFS_OPT("user=%s",            user, 0),
-  VIAPFS_OPT("proxy_user=%s",      proxy_user, 0),
-  VIAPFS_OPT("ipv4",               ip_version, CURL_IPRESOLVE_V4),
-  VIAPFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
-  VIAPFS_OPT("codepage=%s",        codepage, 0),
-  VIAPFS_OPT("iocharset=%s",       iocharset, 0),
+static struct fuse_opt httpostfs_opts[] = {
+  HTTPOSTFS_OPT("httpostfs_debug=%u", debug, 0),
+  HTTPOSTFS_OPT("transform_symlinks", transform_symlinks, 1),
+  HTTPOSTFS_OPT("tcp_nodelay",        tcp_nodelay, 1),
+  HTTPOSTFS_OPT("connect_timeout=%u", connect_timeout, 0),
+  HTTPOSTFS_OPT("interface=%s",       interface, 0),
+  HTTPOSTFS_OPT("proxy=%s",           proxy, 0),
+  HTTPOSTFS_OPT("proxytunnel",        proxytunnel, 1),
+  HTTPOSTFS_OPT("proxy_anyauth",      proxyanyauth, 1),
+  HTTPOSTFS_OPT("proxy_basic",        proxybasic, 1),
+  HTTPOSTFS_OPT("proxy_digest",       proxydigest, 1),
+  HTTPOSTFS_OPT("proxy_ntlm",         proxyntlm, 1),
+  HTTPOSTFS_OPT("httpproxy",          proxytype, CURLPROXY_HTTP),
+  HTTPOSTFS_OPT("socks4",             proxytype, CURLPROXY_SOCKS4),
+  HTTPOSTFS_OPT("socks5",             proxytype, CURLPROXY_SOCKS5),
+  HTTPOSTFS_OPT("user=%s",            user, 0),
+  HTTPOSTFS_OPT("proxy_user=%s",      proxy_user, 0),
+  HTTPOSTFS_OPT("ipv4",               ip_version, CURL_IPRESOLVE_V4),
+  HTTPOSTFS_OPT("ipv6",               ip_version, CURL_IPRESOLVE_V6),
+  HTTPOSTFS_OPT("codepage=%s",        codepage, 0),
+  HTTPOSTFS_OPT("iocharset=%s",       iocharset, 0),
 
   FUSE_OPT_KEY("-h",             KEY_HELP),
   FUSE_OPT_KEY("--help",         KEY_HELP),
@@ -126,7 +126,7 @@ static int op_return(int err, char * operation)
 		return 0;
 	}
         DEBUG(2, "%s failed because %s\n", operation, strerror(-err));
-	fprintf(stderr, "viapfs: operation %s failed because %s\n", operation, strerror(-err));
+	fprintf(stderr, "httpostfs: operation %s failed because %s\n", operation, strerror(-err));
 	return err;
 }
 
@@ -151,12 +151,12 @@ static size_t read_data(void *ptr, size_t size, size_t nmemb, void *data) {
   }while(0)
 
 static int post(gchar *postdata, const void *writedata) {
-  pthread_mutex_lock(&viapfs.lock);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDS, postdata);
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_POSTFIELDSIZE, strlen(postdata));
-  curl_easy_setopt_or_die(viapfs.connection, CURLOPT_WRITEDATA, writedata);
-  CURLcode curl_res = curl_easy_perform(viapfs.connection);
-  pthread_mutex_unlock(&viapfs.lock);
+  pthread_mutex_lock(&httpostfs.lock);
+  curl_easy_setopt_or_die(httpostfs.connection, CURLOPT_POSTFIELDS, postdata);
+  curl_easy_setopt_or_die(httpostfs.connection, CURLOPT_POSTFIELDSIZE, strlen(postdata));
+  curl_easy_setopt_or_die(httpostfs.connection, CURLOPT_WRITEDATA, writedata);
+  CURLcode curl_res = curl_easy_perform(httpostfs.connection);
+  pthread_mutex_unlock(&httpostfs.lock);
 
   if (curl_res != 0) {
     DEBUG(1, "%s\n", error_buf);
@@ -167,11 +167,11 @@ static int post(gchar *postdata, const void *writedata) {
 }
 
 static void invalidate_cache() {
-  if (viapfs.readdir_cache_path) {
-    viapfs.readdir_cache_path = NULL;
-    buf_clear(&viapfs.readdir_cache_buf);
-    viapfs.readdir_cache_curpos = NULL;
-    viapfs.readdir_cache_curoffset = 0;
+  if (httpostfs.readdir_cache_path) {
+    httpostfs.readdir_cache_path = NULL;
+    buf_clear(&httpostfs.readdir_cache_buf);
+    httpostfs.readdir_cache_curpos = NULL;
+    httpostfs.readdir_cache_curoffset = 0;
   }
 }
 
@@ -200,63 +200,63 @@ static int parse_stat(const char* s, struct stat* sbuf) {
   return 1;
 }
 
-static int viapfs_readdir(const char* path, void *rbuf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
+static int httpostfs_readdir(const char* path, void *rbuf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
   (void) offset; (void) fi;
-  DEBUG(1, "viapfs_readdir: %s from %ld\n", path, offset);
+  DEBUG(1, "httpostfs_readdir: %s from %ld\n", path, offset);
 
   int err = 0;
 
   // Check if reading continuation of the same dir
-  if (offset != viapfs.readdir_cache_curoffset) {
-    viapfs.readdir_cache_curoffset = 0;
-    viapfs.readdir_cache_curpos = viapfs.readdir_cache_buf.p;
+  if (offset != httpostfs.readdir_cache_curoffset) {
+    httpostfs.readdir_cache_curoffset = 0;
+    httpostfs.readdir_cache_curpos = httpostfs.readdir_cache_buf.p;
   }
-  if (!viapfs.readdir_cache_path || strcmp(path, viapfs.readdir_cache_path)) {
+  if (!httpostfs.readdir_cache_path || strcmp(path, httpostfs.readdir_cache_path)) {
     invalidate_cache();
-    viapfs.readdir_cache_path = strdup(path);
+    httpostfs.readdir_cache_path = strdup(path);
 
-    CURLcode curl_res = post(g_strdup_printf("readdir\n%s\n", path), &viapfs.readdir_cache_buf);
+    CURLcode curl_res = post(g_strdup_printf("readdir\n%s\n", path), &httpostfs.readdir_cache_buf);
 
     if (curl_res) {
       err = -EIO;
     }
     else {
-      buf_null_terminate(&viapfs.readdir_cache_buf);
-      viapfs.readdir_cache_curoffset = 0;
-      viapfs.readdir_cache_curpos = viapfs.readdir_cache_buf.p;
+      buf_null_terminate(&httpostfs.readdir_cache_buf);
+      httpostfs.readdir_cache_curoffset = 0;
+      httpostfs.readdir_cache_curpos = httpostfs.readdir_cache_buf.p;
     }
   }
 
   if (!err) {
     struct stat sbuf;
-    while (*viapfs.readdir_cache_curpos) {
-      if (viapfs.readdir_cache_curoffset < offset) {
-        while (*viapfs.readdir_cache_curpos && *viapfs.readdir_cache_curpos != '\n')
-          viapfs.readdir_cache_curpos++;
-        if (!*viapfs.readdir_cache_curpos)
+    while (*httpostfs.readdir_cache_curpos) {
+      if (httpostfs.readdir_cache_curoffset < offset) {
+        while (*httpostfs.readdir_cache_curpos && *httpostfs.readdir_cache_curpos != '\n')
+          httpostfs.readdir_cache_curpos++;
+        if (!*httpostfs.readdir_cache_curpos)
           break;
-        viapfs.readdir_cache_curpos++;
-        viapfs.readdir_cache_curoffset++;
+        httpostfs.readdir_cache_curpos++;
+        httpostfs.readdir_cache_curoffset++;
       }
       else {
-        char* entry = viapfs.readdir_cache_curpos;
-        while (*viapfs.readdir_cache_curpos && *viapfs.readdir_cache_curpos != '\t')
-          viapfs.readdir_cache_curpos++;
-        if (!*viapfs.readdir_cache_curpos)
+        char* entry = httpostfs.readdir_cache_curpos;
+        while (*httpostfs.readdir_cache_curpos && *httpostfs.readdir_cache_curpos != '\t')
+          httpostfs.readdir_cache_curpos++;
+        if (!*httpostfs.readdir_cache_curpos)
           break;
-        *viapfs.readdir_cache_curpos = 0;
-        char* entrystat = ++viapfs.readdir_cache_curpos;
-        while (*viapfs.readdir_cache_curpos && *viapfs.readdir_cache_curpos != '\n')
-          viapfs.readdir_cache_curpos++;
-        if (!*viapfs.readdir_cache_curpos)
+        *httpostfs.readdir_cache_curpos = 0;
+        char* entrystat = ++httpostfs.readdir_cache_curpos;
+        while (*httpostfs.readdir_cache_curpos && *httpostfs.readdir_cache_curpos != '\n')
+          httpostfs.readdir_cache_curpos++;
+        if (!*httpostfs.readdir_cache_curpos)
           break;
-        *viapfs.readdir_cache_curpos = 0;
+        *httpostfs.readdir_cache_curpos = 0;
         if (!parse_stat(entrystat, &sbuf))
           break;
-        int rbuf_full = filler(rbuf, entry, &sbuf, viapfs.readdir_cache_curoffset);
-        viapfs.readdir_cache_curpos++;
-        viapfs.readdir_cache_curoffset++;
-        if (entry > viapfs.readdir_cache_buf.p)
+        int rbuf_full = filler(rbuf, entry, &sbuf, httpostfs.readdir_cache_curoffset);
+        httpostfs.readdir_cache_curpos++;
+        httpostfs.readdir_cache_curoffset++;
+        if (entry > httpostfs.readdir_cache_buf.p)
           *(entry-1) = '\n';
         *(entrystat-1) = '\t';
         if (rbuf_full)
@@ -265,11 +265,11 @@ static int viapfs_readdir(const char* path, void *rbuf, fuse_fill_dir_t filler, 
     }
   }
 
-  return op_return(err, "viapfs_readdir");
+  return op_return(err, "httpostfs_readdir");
 }
 
-static int viapfs_getattr(const char* path, struct stat* sbuf) {
-  DEBUG(2, "viapfs_getattr: %s\n", path);
+static int httpostfs_getattr(const char* path, struct stat* sbuf) {
+  DEBUG(2, "httpostfs_getattr: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
 
@@ -286,12 +286,12 @@ static int viapfs_getattr(const char* path, struct stat* sbuf) {
   }
 
   buf_free(&buf);
-  return op_return(err, "viapfs_getattr");
+  return op_return(err, "httpostfs_getattr");
 }
 
-static int viapfs_open_common(const char* path, mode_t mode,
+static int httpostfs_open_common(const char* path, mode_t mode,
                               struct fuse_file_info* fi) {
-  DEBUG(2, "viapfs_open_common: %s mode=%u flags=%o\n", path, mode, fi->flags);
+  DEBUG(2, "httpostfs_open_common: %s mode=%u flags=%o\n", path, mode, fi->flags);
 
   invalidate_cache();
 
@@ -300,24 +300,24 @@ static int viapfs_open_common(const char* path, mode_t mode,
 
   int err = curl_res ? -EIO : 0;  
 
-  return op_return(err, "viapfs_open");
+  return op_return(err, "httpostfs_open");
 }
 
-static int viapfs_open(const char* path, struct fuse_file_info* fi) {
-  return viapfs_open_common(path, 0, fi);
+static int httpostfs_open(const char* path, struct fuse_file_info* fi) {
+  return httpostfs_open_common(path, 0, fi);
 }
 
 #if FUSE_VERSION >= 25
-static int viapfs_create(const char* path, mode_t mode,
+static int httpostfs_create(const char* path, mode_t mode,
                         struct fuse_file_info* fi) {
-  return viapfs_open_common(path, mode, fi);
+  return httpostfs_open_common(path, mode, fi);
 }
 #endif
 
-static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
+static int httpostfs_read(const char* path, char* rbuf, size_t size, off_t offset,
                       struct fuse_file_info* fi) {
   (void) fi;
-  DEBUG(1, "viapfs_read: %s size=%zu offset=%ld\n", path, size, offset);
+  DEBUG(1, "httpostfs_read: %s size=%zu offset=%ld\n", path, size, offset);
 
   struct buffer buf;
   buf_init(&buf);
@@ -334,92 +334,92 @@ static int viapfs_read(const char* path, char* rbuf, size_t size, off_t offset,
   }
   buf_free(&buf);
 
-  if (ret < 0) op_return(ret, "viapfs_read");
+  if (ret < 0) op_return(ret, "httpostfs_read");
   return ret;
 }
 
-static int viapfs_mknod(const char* path, mode_t mode, dev_t rdev) {
-  DEBUG(1, "viapfs_mknode: mode=%u\n", mode);
+static int httpostfs_mknod(const char* path, mode_t mode, dev_t rdev) {
+  DEBUG(1, "httpostfs_mknode: mode=%u\n", mode);
 
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("mknod\n%s\n%u\n%llu\n", path, mode, (unsigned long long)rdev), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_mknod");
+  return op_return(err, "httpostfs_mknod");
 }
 
-static int viapfs_chmod(const char* path, mode_t mode) {
-  DEBUG(1, "viapfs_chmod: %u\n", mode);
+static int httpostfs_chmod(const char* path, mode_t mode) {
+  DEBUG(1, "httpostfs_chmod: %u\n", mode);
 
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("chmod\n%s\n%u\n", path, mode), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_chmod");
+  return op_return(err, "httpostfs_chmod");
 }
 
-static int viapfs_chown(const char* path, uid_t uid, gid_t gid) {
-  DEBUG(1, "viapfs_chown: %u %u\n", uid, gid);
+static int httpostfs_chown(const char* path, uid_t uid, gid_t gid) {
+  DEBUG(1, "httpostfs_chown: %u %u\n", uid, gid);
 
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("chown\n%s\n%u\n%u\n", path, uid, gid), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_chown");
+  return op_return(err, "httpostfs_chown");
 }
 
-static int viapfs_truncate(const char* path, off_t offset) {
-  DEBUG(1, "viapfs_truncate: %s len=%ld\n", path, offset);
+static int httpostfs_truncate(const char* path, off_t offset) {
+  DEBUG(1, "httpostfs_truncate: %s len=%ld\n", path, offset);
 
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("truncate\n%s\n%ld\n", path, offset), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_truncate");
+  return op_return(err, "httpostfs_truncate");
 }
 
-static int viapfs_utime(const char* path, struct utimbuf* time) {
+static int httpostfs_utime(const char* path, struct utimbuf* time) {
   invalidate_cache();
 
   char *postdata = time ? g_strdup_printf("utime\n%s\n%ld\n%ld\n", path, time->actime, time->modtime) : g_strdup_printf("utimenow\n%s\n", path);
   CURLcode curl_res = post(postdata, NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_utime");
+  return op_return(err, "httpostfs_utime");
 }
 
-static int viapfs_rmdir(const char* path) {
+static int httpostfs_rmdir(const char* path) {
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("rmdir\n%s\n", path), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_rmdir");
+  return op_return(err, "httpostfs_rmdir");
 }
 
-static int viapfs_mkdir(const char* path, mode_t mode) {
+static int httpostfs_mkdir(const char* path, mode_t mode) {
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("mkdir\n%s\n%u\n", path, mode), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_mkdir");
+  return op_return(err, "httpostfs_mkdir");
 }
 
-static int viapfs_unlink(const char* path) {
+static int httpostfs_unlink(const char* path) {
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("unlink\n%s\n", path), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_unlink");
+  return op_return(err, "httpostfs_unlink");
 }
 
-static int viapfs_write(const char *path, const char *wbuf, size_t size,
+static int httpostfs_write(const char *path, const char *wbuf, size_t size,
                        off_t offset, struct fuse_file_info *fi) {
   (void) fi;
   invalidate_cache();
@@ -431,32 +431,32 @@ static int viapfs_write(const char *path, const char *wbuf, size_t size,
   g_free(wbufb64);
 
   int err = curl_res ? -EIO : 0;
-  return op_return(err, "viapfs_write");
+  return op_return(err, "httpostfs_write");
 }
 
-static int viapfs_release(const char* path, struct fuse_file_info* fi) {
+static int httpostfs_release(const char* path, struct fuse_file_info* fi) {
   (void) fi;
   invalidate_cache();
 
-  DEBUG(1, "viapfs_release %s\n", path);
+  DEBUG(1, "httpostfs_release %s\n", path);
 
-  return op_return(0, "viapfs_release"); 
+  return op_return(0, "httpostfs_release"); 
 }
 
 
-static int viapfs_rename(const char* from, const char* to) {
-  DEBUG(1, "viapfs_rename from %s to %s\n", from, to);
+static int httpostfs_rename(const char* from, const char* to) {
+  DEBUG(1, "httpostfs_rename from %s to %s\n", from, to);
 
   invalidate_cache();
 
   CURLcode curl_res = post(g_strdup_printf("rename\n%s\n%s\n", from, to), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_rename");
+  return op_return(err, "httpostfs_rename");
 }
 
-static int viapfs_symlink(const char* target, const char* link) {
-  DEBUG(1, "viapfs_symlink from %s to %s\n", link, target);
+static int httpostfs_symlink(const char* target, const char* link) {
+  DEBUG(1, "httpostfs_symlink from %s to %s\n", link, target);
 
   // todo: transform_symlink with symlink_prefix
 
@@ -465,10 +465,10 @@ static int viapfs_symlink(const char* target, const char* link) {
   CURLcode curl_res = post(g_strdup_printf("symlink\n%s\n%s\n", link, target), NULL);
 
   int err = curl_res ? -EPERM : 0;
-  return op_return(err, "viapfs_symlink");
+  return op_return(err, "httpostfs_symlink");
 }
 
-static int viapfs_readlink(const char *path, char *linkbuf, size_t size) {
+static int httpostfs_readlink(const char *path, char *linkbuf, size_t size) {
   DEBUG(2, "readlink: %s\n", path);
   struct buffer buf;
   buf_init(&buf);
@@ -483,75 +483,75 @@ static int viapfs_readlink(const char *path, char *linkbuf, size_t size) {
   }
 
   buf_free(&buf);
-  if (err) return op_return(-ENOENT, "viapfs_readlink");
-  return op_return(0, "viapfs_readlink");
+  if (err) return op_return(-ENOENT, "httpostfs_readlink");
+  return op_return(0, "httpostfs_readlink");
 }
 
 #if FUSE_VERSION >= 25
-static int viapfs_statfs(const char *path, struct statvfs *buf)
+static int httpostfs_statfs(const char *path, struct statvfs *buf)
 {
     (void) path;
 
     buf->f_namemax = 255;
-    buf->f_bsize = viapfs.blksize;
+    buf->f_bsize = httpostfs.blksize;
     buf->f_frsize = 512;
     buf->f_blocks = 999999999 * 2;
     buf->f_bfree =  999999999 * 2;
     buf->f_bavail = 999999999 * 2;
     buf->f_files =  999999999;
     buf->f_ffree =  999999999;
-    return op_return(0, "viapfs_statfs");
+    return op_return(0, "httpostfs_statfs");
 }
 #else
-static int viapfs_statfs(const char *path, struct statfs *buf)
+static int httpostfs_statfs(const char *path, struct statfs *buf)
 {
     (void) path;
 
     buf->f_namelen = 255;
-    buf->f_bsize = viapfs.blksize;
+    buf->f_bsize = httpostfs.blksize;
     buf->f_blocks = 999999999 * 2;
     buf->f_bfree =  999999999 * 2;
     buf->f_bavail = 999999999 * 2;
     buf->f_files =  999999999;
     buf->f_ffree =  999999999;
-    return op_return(0, "viapfs_statfs");
+    return op_return(0, "httpostfs_statfs");
 }
 #endif
 
-static struct fuse_operations viapfs_oper = {
-    .readdir    = viapfs_readdir,
-    .getattr    = viapfs_getattr,
-    .readlink   = viapfs_readlink,
-    .mknod      = viapfs_mknod,
-    .mkdir      = viapfs_mkdir,
-    .symlink    = viapfs_symlink,
-    .unlink     = viapfs_unlink,
-    .rmdir      = viapfs_rmdir,
-    .rename     = viapfs_rename,
-    .chmod      = viapfs_chmod,
-    .chown      = viapfs_chown,
-    .truncate   = viapfs_truncate,
-    .utime      = viapfs_utime,
-    .open       = viapfs_open,
-    .release    = viapfs_release,
-    .read       = viapfs_read,
-    .write      = viapfs_write,
-    .statfs     = viapfs_statfs,
+static struct fuse_operations httpostfs_oper = {
+    .readdir    = httpostfs_readdir,
+    .getattr    = httpostfs_getattr,
+    .readlink   = httpostfs_readlink,
+    .mknod      = httpostfs_mknod,
+    .mkdir      = httpostfs_mkdir,
+    .symlink    = httpostfs_symlink,
+    .unlink     = httpostfs_unlink,
+    .rmdir      = httpostfs_rmdir,
+    .rename     = httpostfs_rename,
+    .chmod      = httpostfs_chmod,
+    .chown      = httpostfs_chown,
+    .truncate   = httpostfs_truncate,
+    .utime      = httpostfs_utime,
+    .open       = httpostfs_open,
+    .release    = httpostfs_release,
+    .read       = httpostfs_read,
+    .write      = httpostfs_write,
+    .statfs     = httpostfs_statfs,
 #if FUSE_VERSION >= 25
-    .create     = viapfs_create,
+    .create     = httpostfs_create,
 #endif
 };
 
-static int viaphpfs_fuse_main(struct fuse_args *args)
+static int httpostfs_fuse_main(struct fuse_args *args)
 {
 #if FUSE_VERSION >= 26
-    return fuse_main(args->argc, args->argv, &viapfs_oper, NULL);
+    return fuse_main(args->argc, args->argv, &httpostfs_oper, NULL);
 #else
-    return fuse_main(args->argc, args->argv, &viapfs_oper);
+    return fuse_main(args->argc, args->argv, &httpostfs_oper);
 #endif
 }
 
-static int viapfs_opt_proc(void* data, const char* arg, int key,
+static int httpostfs_opt_proc(void* data, const char* arg, int key,
                           struct fuse_args* outargs) {
   (void) data;
   (void) outargs;
@@ -560,27 +560,27 @@ static int viapfs_opt_proc(void* data, const char* arg, int key,
     case FUSE_OPT_KEY_OPT:
       return 1;
     case FUSE_OPT_KEY_NONOPT:
-      if (!viapfs.host) {
+      if (!httpostfs.host) {
         if (strncmp(arg, "http://", 6) && strncmp(arg, "https://", 7))
-          viapfs.host = g_strdup_printf("http://%s", arg);
+          httpostfs.host = g_strdup_printf("http://%s", arg);
         else
-          viapfs.host = strdup(arg);
+          httpostfs.host = strdup(arg);
         return 0;
-      } else if (!viapfs.mountpoint)
-        viapfs.mountpoint = strdup(arg);
+      } else if (!httpostfs.mountpoint)
+        httpostfs.mountpoint = strdup(arg);
       return 1;
     case KEY_HELP:
       usage(outargs->argv[0]);
       fuse_opt_add_arg(outargs, "-ho");
-      viaphpfs_fuse_main(outargs);
+      httpostfs_fuse_main(outargs);
       exit(1);
     case KEY_VERBOSE:
-      viapfs.verbose = 1;
+      httpostfs.verbose = 1;
       return 0;
     case KEY_VERSION:
-      fprintf(stderr, "viaphpfs %s libcurl/%s fuse/%u.%u\n",
+      fprintf(stderr, "httpostfs %s libcurl/%s fuse/%u.%u\n",
               VERSION,
-              viapfs.curl_version->version,
+              httpostfs.curl_version->version,
               FUSE_MAJOR_VERSION,
               FUSE_MINOR_VERSION);
       exit(1);
@@ -591,16 +591,16 @@ static int viapfs_opt_proc(void* data, const char* arg, int key,
 
 static void usage(const char* progname) {
   fprintf(stderr,
-"usage: %s <viaphphost> <mountpoint>\n"
+"usage: %s <httphost> <mountpoint>\n"
 "\n"
-"ViaPhpFS options:\n"
+"HttpostFS options:\n"
 "    -o opt,[opt...]        http options\n"
 "    -v   --verbose         make libcurl print verbose debug\n"
 "    -h   --help            print help\n"
 "    -V   --version         print version\n"
 "\n"
 "HTTP options:\n"
-"    viapfs_debug        print some debugging information\n"
+"    httpostfs_debug     print some debugging information\n"
 "    transform_symlinks  prepend mountpoint to absolute symlink targets\n"
 "    tcp_nodelay         use the TCP_NODELAY option\n"
 "    connect_timeout=N   maximum time allowed for connection in seconds\n"
@@ -626,53 +626,53 @@ static void usage(const char* progname) {
 static void set_common_curl_stuff(CURL* easy) {
   curl_easy_setopt_or_die(easy, CURLOPT_WRITEFUNCTION, read_data);
   curl_easy_setopt_or_die(easy, CURLOPT_ERRORBUFFER, error_buf);
-  curl_easy_setopt_or_die(easy, CURLOPT_URL, viapfs.host);
+  curl_easy_setopt_or_die(easy, CURLOPT_URL, httpostfs.host);
   curl_easy_setopt_or_die(easy, CURLOPT_POST, 1);
   curl_easy_setopt_or_die(easy, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
   curl_easy_setopt_or_die(easy, CURLOPT_NOSIGNAL, 1);
 
-  if (viapfs.verbose) {
+  if (httpostfs.verbose) {
     curl_easy_setopt_or_die(easy, CURLOPT_VERBOSE, TRUE);
   }
 
-  if (viapfs.tcp_nodelay) {
+  if (httpostfs.tcp_nodelay) {
     /* CURLOPT_TCP_NODELAY is not defined in older versions */
     curl_easy_setopt_or_die(easy, CURLOPT_TCP_NODELAY, 1);
   }
 
-  curl_easy_setopt_or_die(easy, CURLOPT_CONNECTTIMEOUT, viapfs.connect_timeout);
+  curl_easy_setopt_or_die(easy, CURLOPT_CONNECTTIMEOUT, httpostfs.connect_timeout);
 
-  curl_easy_setopt_or_die(easy, CURLOPT_INTERFACE, viapfs.interface);
+  curl_easy_setopt_or_die(easy, CURLOPT_INTERFACE, httpostfs.interface);
   
-  if (viapfs.proxy) {
-    curl_easy_setopt_or_die(easy, CURLOPT_PROXY, viapfs.proxy);
+  if (httpostfs.proxy) {
+    curl_easy_setopt_or_die(easy, CURLOPT_PROXY, httpostfs.proxy);
   }
 
   /* The default proxy type is HTTP */
-  if (!viapfs.proxytype) {
-    viapfs.proxytype = CURLPROXY_HTTP;
+  if (!httpostfs.proxytype) {
+    httpostfs.proxytype = CURLPROXY_HTTP;
   }
-  curl_easy_setopt_or_die(easy, CURLOPT_PROXYTYPE, viapfs.proxytype);
+  curl_easy_setopt_or_die(easy, CURLOPT_PROXYTYPE, httpostfs.proxytype);
   
   /* Connection to HTTP servers only make sense with a HTTP tunnel proxy */
-  if (viapfs.proxytype == CURLPROXY_HTTP || viapfs.proxytunnel) {
+  if (httpostfs.proxytype == CURLPROXY_HTTP || httpostfs.proxytunnel) {
     curl_easy_setopt_or_die(easy, CURLOPT_HTTPPROXYTUNNEL, TRUE);
   }
 
-  if (viapfs.proxyanyauth) {
+  if (httpostfs.proxyanyauth) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
-  } else if (viapfs.proxyntlm) {
+  } else if (httpostfs.proxyntlm) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXYAUTH, CURLAUTH_NTLM);
-  } else if (viapfs.proxydigest) {
+  } else if (httpostfs.proxydigest) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXYAUTH, CURLAUTH_DIGEST);
-  } else if (viapfs.proxybasic) {
+  } else if (httpostfs.proxybasic) {
     curl_easy_setopt_or_die(easy, CURLOPT_PROXYAUTH, CURLAUTH_BASIC);
   }
 
   //  curl_easy_setopt_or_die(easy, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
-  curl_easy_setopt_or_die(easy, CURLOPT_USERPWD, viapfs.user);
-  curl_easy_setopt_or_die(easy, CURLOPT_PROXYUSERPWD, viapfs.proxy_user);
-  curl_easy_setopt_or_die(easy, CURLOPT_IPRESOLVE, viapfs.ip_version);
+  curl_easy_setopt_or_die(easy, CURLOPT_USERPWD, httpostfs.user);
+  curl_easy_setopt_or_die(easy, CURLOPT_PROXYUSERPWD, httpostfs.proxy_user);
+  curl_easy_setopt_or_die(easy, CURLOPT_IPRESOLVE, httpostfs.ip_version);
 }
 
 static void checkpasswd(const char *kind, /* for what purpose */
@@ -742,27 +742,27 @@ int main(int argc, char** argv) {
   // Initialize curl library before we are a multithreaded program
   curl_global_init(CURL_GLOBAL_ALL);
   
-  memset(&viapfs, 0, sizeof(viapfs));
+  memset(&httpostfs, 0, sizeof(httpostfs));
 
   // Set some default values
-  viapfs.curl_version = curl_version_info(CURLVERSION_NOW);
-  viapfs.blksize = 4096;
+  httpostfs.curl_version = curl_version_info(CURLVERSION_NOW);
+  httpostfs.blksize = 4096;
   
-  if (fuse_opt_parse(&args, &viapfs, viapfs_opts, viapfs_opt_proc) == -1)
+  if (fuse_opt_parse(&args, &httpostfs, httpostfs_opts, httpostfs_opt_proc) == -1)
     exit(1);
 
-  if (!viapfs.host) {
+  if (!httpostfs.host) {
     fprintf(stderr, "missing host\n");
     fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
     exit(1);
   }
 
-  if (!viapfs.iocharset) {
-    viapfs.iocharset = "UTF8";
+  if (!httpostfs.iocharset) {
+    httpostfs.iocharset = "UTF8";
   }
 
-  if (viapfs.codepage) {
-    convert_charsets(viapfs.iocharset, viapfs.codepage, &viapfs.host);
+  if (httpostfs.codepage) {
+    convert_charsets(httpostfs.iocharset, httpostfs.codepage, &httpostfs.host);
   }
 
   easy = curl_easy_init();
@@ -771,17 +771,17 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
-  checkpasswd("host", &viapfs.user);
-  checkpasswd("proxy", &viapfs.proxy_user);
+  checkpasswd("host", &httpostfs.user);
+  checkpasswd("proxy", &httpostfs.proxy_user);
 
-  if (viapfs.transform_symlinks && !viapfs.mountpoint) {
+  if (httpostfs.transform_symlinks && !httpostfs.mountpoint) {
     fprintf(stderr, "cannot transform symlinks: no mountpoint given\n");
     exit(1);
   }
-  if (!viapfs.transform_symlinks)
-    viapfs.symlink_prefix_len = 0;
-  else if (realpath(viapfs.mountpoint, viapfs.symlink_prefix) != NULL)
-    viapfs.symlink_prefix_len = strlen(viapfs.symlink_prefix);
+  if (!httpostfs.transform_symlinks)
+    httpostfs.symlink_prefix_len = 0;
+  else if (realpath(httpostfs.mountpoint, httpostfs.symlink_prefix) != NULL)
+    httpostfs.symlink_prefix_len = strlen(httpostfs.symlink_prefix);
   else {
     perror("unable to normalize mount path");
     exit(1);
@@ -801,20 +801,20 @@ int main(int argc, char** argv) {
 
   blksize_t blksize = -1;
   if (sscanf(buf.p, "%ld", &blksize) != 1 || blksize <= 0) {
-    fprintf(stderr, "Wrong blocksize (%ld), maybe the host is not a right viaphpfs server\n", blksize);
+    fprintf(stderr, "Wrong blocksize (%ld), maybe the host is not a right httpostfs server\n", blksize);
     exit(1);
   }
-  viapfs.blksize = blksize;
+  httpostfs.blksize = blksize;
 
-  viapfs.connection = easy;
-  pthread_mutex_init(&viapfs.lock, NULL);
+  httpostfs.connection = easy;
+  pthread_mutex_init(&httpostfs.lock, NULL);
 
   // Set the filesystem name to show the current server
-  tmp = g_strdup_printf("-ofsname=viaphpfs#%s", viapfs.host);
+  tmp = g_strdup_printf("-ofsname=httpostfs#%s", httpostfs.host);
   fuse_opt_insert_arg(&args, 1, tmp);
   g_free(tmp);
 
-  res = viaphpfs_fuse_main(&args);
+  res = httpostfs_fuse_main(&args);
 
   curl_easy_cleanup(easy);
   curl_global_cleanup();

@@ -1,6 +1,6 @@
-AC_INIT(viaphpfs, 0.0.1)
+AC_INIT(httpostfs, 0.0.1)
 AM_INIT_AUTOMAKE
-AM_CONFIG_HEADER(config.h)
+AC_CONFIG_HEADER([config.h])
 
 AC_PROG_AWK
 AC_PROG_CC

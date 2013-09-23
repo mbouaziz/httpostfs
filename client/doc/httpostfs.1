@@ -1,16 +1,15 @@
-.TH viaphpfs 1 "5 August 2013" "ViaPhpFS 0.0.1" "ViaPhpFS Manual"
+.TH httpostfs 1 "23 September 2013" "HttpostFS 0.0.1" "HttpostFS Manual"
 .SH NAME
-viaphpfs \- mount a viaphpfs host as a local directory
+httpostfs \- mount a httpostfs host as a local directory
 .SH SYNOPSIS
-.B viaphpfs [options]
+.B httpostfs [options]
 .I host path
 .SH DESCRIPTION
 The program
-.B viaphpfs
+.B httpostfs
 is a tool to mount remote viaphpfs hosts as local directories.
-TODO
 
-viaphpfs is powered by libcurl for all transfer-related features. See
+httpostfs is powered by libcurl for all transfer-related features. See
 .BR libcurl (3)
 for details. The filesystem part is implemented on top of FUSE.
 See
@@ -25,7 +24,7 @@ Print help options.
 Make libcurl print verbose debug output.
 .TP
 .B "-V/--version"
-Print viaphpfs, libcurl and fuse versions.
+Print httpostfs, libcurl and fuse versions.
 .TP
 .B \-o
 Options are specified with a
@@ -38,15 +37,15 @@ Sets the encoding the http server uses to encode file names.
 .TP
 .B connect_timeout=<seconds>
 Maximum time in seconds that you allow the connection to the server to take.
-This only limits the connection phase, once viaphpfs has connected this option
+This only limits the connection phase, once httpostfs has connected this option
 is of no more use.
 .TP
 .B custom_list=<command>
-Command used by viaphpfs to list files. The default is "LIST -a" but some
+Command used by httpostfs to list files. The default is "LIST -a" but some
 servers might require extra options, e.g. "LIST -la".
 .TP
-.B viapfs_debug
-Make viaphpfs print lots of debug information. Useful only in conjunction with
+.B httpostfs_debug
+Make httpostfs print lots of debug information. Useful only in conjunction with
 the
 .B \-d
 option.
@@ -96,7 +95,7 @@ exact same way as the proxy environment  variables,  including protocol prefix
 (http://) and embedded user + password.
 .TP
 .B proxytunnel
-Tells viaphpfs to use a tunnel proxy. This option is implied by the 
+Tells httpostfs to use a tunnel proxy. This option is implied by the 
 \fBproxy\fP option but you need to set it manually if you use the \fIproxy\fP
 environment variable.
 .TP
@@ -105,16 +104,16 @@ Tells curl to pick a suitable authentication method when  communicating  with
 the  given  proxy.  This  will  cause  an  extra request/response round-trip.
 .TP
 .B proxy_basic
-Tells viaphpfs to use HTTP Basic authentication when communicating with the
-given proxy. Basic is the default authentication method viaphpfs is used with
+Tells httpostfs to use HTTP Basic authentication when communicating with the
+given proxy. Basic is the default authentication method httpostfs is used with
 proxies.
 .TP
 .B proxy_digest
-Tells  viaphpfs to use HTTP Digest authentication when communicating with the
+Tells  httpostfs to use HTTP Digest authentication when communicating with the
 given proxy.
 .TP
 .B proxy_ntlm
-Tells viaphpfs to use HTTP NTLM  authentication  when  communicating with the
+Tells httpostfs to use HTTP NTLM  authentication  when  communicating with the
 given proxy.
 .TP
 .B proxy_user=<user:password>
@@ -145,7 +144,7 @@ netrc configuration.
 Enable FUSE debug output. Implies \fB-f\fP.
 .TP
 .B "-f"
-Run viaphpfs in foreground mode.
+Run httpostfs in foreground mode.
 .TP
 .B "-r"
 Mount read-only.
@@ -206,8 +205,9 @@ set file permissions (octal)
 .B use_ino
 let filesystem set inode numbers
 .SH AUTHORS
-Mehdi Bouaziz is the author and maintainer of ViaPhpFS.
+HttpostFS is based on curlftpfs, written by Robson Braga Araujo.
+Mehdi Bouaziz is the author and maintainer of HttpostFS.
 .SH WWW
-http://mehdi.bouaziz.me/viaphpfs
+http://mehdi.bouaziz.me/httpostfs
 .SH "SEE ALSO"
 .BR mount (8)

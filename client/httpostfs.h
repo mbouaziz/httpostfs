@@ -1,5 +1,5 @@
-#ifndef __VIAPHPFS_VIAPFS_H__
-#define __VIAPHPFS_VIAPFS_H__
+#ifndef __HTTPOSTFS_HTTPOSTFS_H__
+#define __HTTPOSTFS_HTTPOSTFS_H__
 
 /*
     Copyright (C) 2006 Robson Braga Araujo <robsonbraga@gmail.com>
@@ -26,7 +26,7 @@ struct buffer {
   off_t begin_offset;
 };
 
-struct viapfs {
+struct httpostfs {
   char* host;
   char* mountpoint;
   pthread_mutex_t lock;
@@ -60,10 +60,10 @@ struct viapfs {
   int readdir_cache_curoffset;
 };
 
-extern struct viapfs viapfs;
+extern struct httpostfs httpostfs;
 
 #define DEBUG(level, args...) \
-        do { if (level <= viapfs.debug) {\
+        do { if (level <= httpostfs.debug) {\
                int i = 0; \
                while (++i < level) fprintf(stderr, " "); \
                fprintf(stderr, "%ld ", time(NULL));\
@@ -72,4 +72,4 @@ extern struct viapfs viapfs;
              }\
            } while(0)
 
-#endif   /* __VIAPHPFS_VIAPFS_H__ */
+#endif   /* __HTTPOSTFS_HTTPOSTFS_H__ */
