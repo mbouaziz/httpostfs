@@ -1,6 +1,6 @@
 <?
 
-define('VIAPHPFS_ROOT', getcwd()); // without last slash
+define('VIAPHPFS_ROOT', realpath((getcwd()).'/../www/mehdi'));
 define('VIAPHPFS_READONLY', false);
 define('VIAPHPFS_LOG', true);
 define('VIAPHPFS_LOGFILE', 'log.log');
@@ -35,7 +35,7 @@ function die_success($echo = '') {
   die($echo);
 }
 function die_with($b, $msg) {
-  if ($b) die_error($msg);
+  if ($b === FALSE) die_error($msg);
   else die_success();
 }
 function die_blksize() {
@@ -56,7 +56,18 @@ else {
 function mk_f($f) {
   if (!$f) die_error('Empty file name');
   if ($f[0] != '/') die_error('Invalid file name');
+//    return VIAPHPFS_PREFIX . '/' . $f;
   return VIAPHPFS_PREFIX . $f;
+}
+
+function format_stat($stat) {
+  return "{$stat['ino']}\t{$stat['mode']}\t{$stat['nlink']}\t{$stat['uid']}\t{$stat['gid']}\t{$stat['rdev']}\t{$stat['size']}\t{$stat['blocks']}\t{$stat['atime']}\t{$stat['mtime']}\t{$stat['ctime']}\n";
+}
+
+function mk_dir_entry($fi) {
+  global $f;
+  $stat = @lstat($f . $fi) or die_error('Cannot lstat ' . $f . $fi);
+  return $fi . "\t" . format_stat($stat);
 }
 
 
@@ -73,15 +84,14 @@ $f = mk_f($postdata[1]);
 switch ($action)
 {
   case 'stat':
-    $stat = @lstat($f) or die_error('Cannot stat');
-    $mystat = array($stat['ino'], $stat['mode'], $stat['nlink'], $stat['uid'], $stat['gid'], $stat['rdev'], $stat['size'], $stat['blocks'], $stat['atime'], $stat['mtime'], $stat['ctime']);
-    die_success(implode("\n", $mystat)."\n");
+    $stat = @lstat($f) or die_error('Cannot lstat ' . $f);
+    die_success(format_stat($stat));
   case 'readlink':
     $c = readlink($f) or die_error('Cannot readlink');
     die_success($c);
   case 'readdir':
     $a = @scandir($f) or die_error('Cannot scandir');
-    die_success(implode("\n", $a));
+    die_success(implode(array_map('mk_dir_entry', $a)));
   case 'read':
     $size = @$postdata[2];
     $offset = @$postdata[3];
@@ -166,8 +176,8 @@ switch ($action)
     $f2 = mk_f(@$postdata[2]);
     die_with(rename($f, $f2), 'Cannot rename');
   case 'symlink':
-    $link = mk_f(@$postdata[2]);
-    die_with(symlink($f, $link), 'Cannot symlink');
+    $target = mk_f(@$postdata[2]);
+    die_with(symlink($target, $f), 'Cannot symlink');
   case 'write':
     $offset = @$postdata[2];
     $size = @$postdata[3];
@@ -177,6 +187,7 @@ switch ($action)
     $wbuf = base64_decode($wbufb64, true);
     if ($wbuf === FALSE) die_error('Cannot base64_decode');
     fwrite($h, $wbuf, $size) or die_error('Cannot fwrite');
+    fflush($h) or die_error('Cannot fflush');
     die_with(fclose($h), 'Cannot fclose');
 }
 

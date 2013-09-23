@@ -19,6 +19,13 @@
 #define FUSE_VERSION (FUSE_MAJOR_VERSION * 10 + FUSE_MINOR_VERSION)
 #endif
 
+struct buffer {
+  char* p;
+  size_t len;
+  size_t size;
+  off_t begin_offset;
+};
+
 struct viapfs {
   char* host;
   char* mountpoint;
@@ -46,6 +53,11 @@ struct viapfs {
   curl_version_info_data* curl_version;
   char *codepage;
   char *iocharset;
+
+  char* readdir_cache_path;
+  struct buffer readdir_cache_buf;
+  char* readdir_cache_curpos;
+  int readdir_cache_curoffset;
 };
 
 extern struct viapfs viapfs;
