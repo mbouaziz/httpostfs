@@ -1,9 +1,13 @@
 <?
+/*  Httpost file system - PHP5 server
+    Copyright (C) 2013 Mehdi Bouaziz <mehdi@bouaziz.org>
 
-define('VIAPHPFS_ROOT', realpath((getcwd()).'/../www/mehdi'));
-define('VIAPHPFS_READONLY', false);
-define('VIAPHPFS_LOG', true);
-define('VIAPHPFS_LOGFILE', 'log.log');
+    This program can be distributed under the terms of the GNU GPL.
+    See the file COPYING.
+*/
+
+require_once 'fs-config.php';
+
 define('O_ACCMODE', 3);
 define('O_RDONLY', 0);
 define('O_WRONLY', 1);
@@ -13,25 +17,25 @@ define('O_EXCL', 0200);
 define('O_TRUNC', 01000);
 define('O_APPEND', 02000);
 
-if (VIAPHPFS_LOG) {
-  $viaphpfs_logh = fopen(VIAPHPFS_LOGFILE, 'a') or die;
+if (HTTPOSTFS_LOG) {
+  $httpostfs_logh = fopen(HTTPOSTFS_LOGFILE, 'a') or die;
 }
 else {
-  $viaphpfs_logh = FALSE;
+  $httpostfs_logh = FALSE;
 }
 
-function viaphpfs_log($msg) {
-  global $viaphpfs_logh;
-  if (VIAPHPFS_LOG)
-    fwrite($viaphpfs_logh, $msg);
+function httpostfs_log($msg) {
+  global $httpostfs_logh;
+  if (HTTPOSTFS_LOG)
+    fwrite($httpostfs_logh, $msg);
 }
 
 function die_error($msg) {
-  viaphpfs_log('Error: ' . $msg . "\n");
+  httpostfs_log('Error: ' . $msg . "\n");
   die; // TODO
 }
 function die_success($echo = '') {
-  viaphpfs_log('Success: ' . $echo . "\n");
+  httpostfs_log('Success: ' . $echo . "\n");
   die($echo);
 }
 function die_with($b, $msg) {
@@ -43,21 +47,21 @@ function die_blksize() {
   die_success($s['blksize'] . "\n");
 }
 
-ini_set('open_basedir', VIAPHPFS_ROOT);
+ini_set('open_basedir', HTTPOSTFS_ROOT);
 
-if (@chroot(VIAPHPFS_ROOT)) {
-  define('VIAPHPFS_PREFIX', '');
+if (@chroot(HTTPOSTFS_ROOT)) {
+  define('HTTPOSTFS_PREFIX', '');
 }
 else {
-  $trailing_slash = substr(VIAPHPFS_ROOT, -1, 1) == '/' ? '' : '/';
-  define('VIAPHPFS_PREFIX', VIAPHPFS_ROOT.$trailing_slash);
+  $trailing_slash = substr(HTTPOSTFS_ROOT, -1, 1) == '/' ? '' : '/';
+  define('HTTPOSTFS_PREFIX', HTTPOSTFS_ROOT.$trailing_slash);
 }
 
 function mk_f($f) {
   if (!$f) die_error('Empty file name');
   if ($f[0] != '/') die_error('Invalid file name');
-//    return VIAPHPFS_PREFIX . '/' . $f;
-  return VIAPHPFS_PREFIX . $f;
+//    return HTTPOSTFS_PREFIX . '/' . $f;
+  return HTTPOSTFS_PREFIX . $f;
 }
 
 function format_stat($stat) {
@@ -73,13 +77,15 @@ function mk_dir_entry($fi) {
 
 $postdata = file('php://input', FILE_IGNORE_NEW_LINES);
 
-viaphpfs_log('Got: ' . implode("\t", $postdata) . "\n");
+httpostfs_log('Got: ' . implode("\t", $postdata) . "\n");
 
 isset($postdata[0]) or die_blksize();
 isset($postdata[1]) or die_error('No file specified');
 
 $action = $postdata[0];
 $f = mk_f($postdata[1]);
+
+HTTPOSTFS_SYMLINKONLY and $action != 'symlink' and $action != 'readlink' and die_error('Symlinkonly mode in effect. Cannot '.$action);
 
 switch ($action)
 {
@@ -101,7 +107,7 @@ switch ($action)
   case 'open':
     $mode = @$postdata[2];
     $flags = @$postdata[3];
-    if (VIAPHPFS_READONLY &&
+    if (HTTPOSTFS_READONLY &&
          (($flags & O_ACCMODE != O_RDONLY)
        || ($flags & O_APPEND == O_APPEND)
        || ($flags & O_TRUNC == O_TRUNC)
@@ -137,7 +143,7 @@ switch ($action)
     die_success();
 }
 
-VIAPHPFS_READONLY and die_error('Readonly mode in effect. Cannot '.$action);
+HTTPOSTFS_READONLY and die_error('Readonly mode in effect. Cannot '.$action);
 
 switch ($action)
 {

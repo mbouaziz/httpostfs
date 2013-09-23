@@ -18,13 +18,9 @@ libcurl >= 7.17.0
 Compilation and Installation
 ============================
 
-1. (Once) Generate autotools files :
-  a. Run autoheader (to generate config.h.in)
-  b. Run aclocal (to generate aclocal.m4)
-  c. Run libtoolize (to generate ltmain.sh)
-  c. Run automake --add-missing (to generate Makefile.in, config.guess,
-     config.sub, depcomp, install-sh and missing)
-  d. Run autoconf (to generate configure)
+1. (Once) Generate autotools files : run autoreconf
+  (to generate aclocal.m4, config.guess, config.h.in, config.sub,
+   configure, depcomp, install-sh, ltmain.sh, Makefile.in, and missing)
 
 2. (Once) Configure : run ./configure (to generate Makefile and config.h)
 
