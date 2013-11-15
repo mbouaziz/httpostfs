@@ -180,8 +180,11 @@ switch ($action)
     $f2 = mk_f(@$postdata[2]);
     die_with(rename($f, $f2), 'Cannot rename');
   case 'symlink':
-    $target = mk_f(@$postdata[2]);
-    die_with(symlink($target, $f), 'Cannot symlink');
+    $target = @$postdata[2];
+    if (function_exists('symlink_hook'))
+      die_with(symlink_hook($target, $f), 'Cannot symlink_hook');
+    else
+      die_with(symlink($target, $f), 'Cannot symlink_hook');
   case 'write':
     $offset = @$postdata[2];
     $size = @$postdata[3];
