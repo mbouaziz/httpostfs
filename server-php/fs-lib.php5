@@ -48,18 +48,18 @@ function die_blksize() {
 ini_set('open_basedir', HTTPOSTFS_ROOT);
 
 if (@chroot(HTTPOSTFS_ROOT)) {
-  define('HTTPOSTFS_PREFIX', '');
+  define('HTTPOSTFS_PREFIX', '/');
 }
 else {
   $trailing_slash = substr(HTTPOSTFS_ROOT, -1, 1) == '/' ? '' : '/';
   define('HTTPOSTFS_PREFIX', HTTPOSTFS_ROOT.$trailing_slash);
 }
 
-function mk_f($f) {
+function mk_f($f, $optional_heading_slash = false) {
   if (!$f) die_error('Empty file name');
-  if ($f[0] != '/') die_error('Invalid file name');
-//    return HTTPOSTFS_PREFIX . '/' . $f;
-  return HTTPOSTFS_PREFIX . $f;
+  $hs = ($f[0] == '/');
+  if (!$hs && !$optional_heading_slash) die_error('Invalid file name');
+  return HTTPOSTFS_PREFIX . substr($f, $hs ? 1 : 0);
 }
 
 function format_stat($stat) {
@@ -184,7 +184,7 @@ switch ($action)
     if (function_exists('symlink_hook'))
       die_with(symlink_hook($target, $f), 'Cannot symlink_hook');
     else
-      die_with(symlink($target, $f), 'Cannot symlink_hook');
+      die_with(symlink($target, $f), 'Cannot symlink');
   case 'write':
     $offset = @$postdata[2];
     $size = @$postdata[3];
